@@ -4371,6 +4371,7 @@ ngx_http_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_OK;
     }
 
+    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "url->data: %s", url->data);
     if (ngx_strncasecmp(url->data, (u_char *) "http://", 7) == 0) {
         add = 7;
         port = 80;

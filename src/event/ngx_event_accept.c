@@ -321,6 +321,7 @@ ngx_event_accept(ngx_event_t *ev)
 #if (NGX_HAVE_EPOLLEXCLUSIVE)
     ngx_reorder_accept_events(ls);
 #endif
+
 }
 
 

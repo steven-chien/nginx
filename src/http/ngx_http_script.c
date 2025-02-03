@@ -1280,6 +1280,7 @@ ngx_http_script_regex_end_code(ngx_http_script_engine_t *e)
 
     if (code->uri) {
         r->uri = e->buf;
+        ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "r->uri: \"%V\", args: \"%V\"", &r->uri, &r->args);
 
         if (r->uri.len == 0) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,

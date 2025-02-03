@@ -83,14 +83,21 @@ CORE_SRCS="src/core/nginx.c \
 
 EVENT_MODULES="ngx_events_module ngx_event_core_module"
 
-EVENT_INCS="src/event src/event/modules src/event/quic"
+EVENT_INCS="src/event src/event/modules src/event/quic src/http src/http/modules"
 
 EVENT_DEPS="src/event/ngx_event.h \
             src/event/ngx_event_timer.h \
             src/event/ngx_event_posted.h \
             src/event/ngx_event_connect.h \
             src/event/ngx_event_pipe.h \
-            src/event/ngx_event_udp.h"
+            src/event/ngx_event_udp.h \
+            src/event/queue.h \
+            src/event/tls.h \
+            src/event/socket_serialize.pb-c.h \
+            src/event/util.h \
+            src/event/http_client.h \
+            src/event/handoff.h \
+            src/http/ngx_http.h"
 
 EVENT_SRCS="src/event/ngx_event.c \
             src/event/ngx_event_timer.c \
@@ -98,7 +105,13 @@ EVENT_SRCS="src/event/ngx_event.c \
             src/event/ngx_event_accept.c \
             src/event/ngx_event_udp.c \
             src/event/ngx_event_connect.c \
-            src/event/ngx_event_pipe.c"
+            src/event/ngx_event_pipe.c \
+            src/event/queue.c \
+            src/event/tls.c \
+            src/event/socket_serialize.pb-c.c \
+            src/event/util.c \
+            src/event/http_client.c \
+            src/event/handoff.c"
 
 
 SELECT_MODULE=ngx_select_module

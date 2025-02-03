@@ -1435,7 +1435,7 @@ ngx_http_core_find_location(ngx_http_request_t *r)
         for (clcfp = pclcf->regex_locations; *clcfp; clcfp++) {
 
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                           "test location: ~ \"%V\"", &(*clcfp)->name);
+                           "ngx_http_core_find_location: test location: ~ \"%V\"", &(*clcfp)->name);
 
             n = ngx_http_regex_exec(r, (*clcfp)->regex, &r->uri);
 
@@ -1489,7 +1489,7 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
         }
 
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                       "test location: \"%*s\"",
+                       "ngx_http_core_find_static_location: test location: \"%*s\"",
                        (size_t) node->len, node->name);
 
         n = (len <= (size_t) node->len) ? len : node->len;
@@ -2584,7 +2584,7 @@ ngx_http_named_location(ngx_http_request_t *r, ngx_str_t *name)
         for (clcfp = cscf->named_locations; *clcfp; clcfp++) {
 
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                           "test location: \"%V\"", &(*clcfp)->name);
+                           "ngx_http_named_location: test location: \"%V\"", &(*clcfp)->name);
 
             if (name->len != (*clcfp)->name.len
                 || ngx_strncmp(name->data, (*clcfp)->name.data, name->len) != 0)

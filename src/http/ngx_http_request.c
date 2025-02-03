@@ -222,9 +222,12 @@ ngx_http_init_connection(ngx_connection_t *c)
 
     /* find the server configuration for the address:port */
 
-    port = c->listening->servers;
+    if (c->listening != NULL)
+        port = c->listening->servers;
+    else
+        port = NULL;
 
-    if (port->naddrs > 1) {
+    if (port != NULL && port->naddrs > 1) {
 
         /*
          * there are several addresses on this port and one of them
@@ -276,7 +279,7 @@ ngx_http_init_connection(ngx_connection_t *c)
             break;
         }
 
-    } else {
+    } else if (port != NULL) {
 
         switch (c->local_sockaddr->sa_family) {
 
@@ -1079,7 +1082,7 @@ failed:
 #endif
 
 
-static void
+void
 ngx_http_process_request_line(ngx_event_t *rev)
 {
     ssize_t              n;
@@ -2512,6 +2515,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         ngx_http_finalize_connection(r);
         return;
     }
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0, "finalize_request: uri: \"%V\"", &r->uri);
 
     if (rc == NGX_OK && r->filter_finalize) {
         c->error = 1;
@@ -2797,7 +2801,7 @@ ngx_http_finalize_connection(ngx_http_request_t *r)
         r->keepalive = 0;
         r->lingering_close = 1;
     }
-
+ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "SET ALIVE %d %d %d", ngx_exiting, r->keepalive, clcf->keepalive_timeout);
     if (!ngx_terminate
          && !ngx_exiting
          && r->keepalive
@@ -3414,6 +3418,16 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
     if (n == 0) {
         ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
                       "client %V closed keepalive connection", &c->addr_text);
+        if (c->handoff_out_ctx) { 
+            ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno, "Freeing handoff_out_ctx");
+            if (c->handoff_out_ctx->client) free(c->handoff_out_ctx->client);
+            free(c->handoff_out_ctx);
+            c->handoff_in_ctx = NULL;
+        }
+        if (c->handoff_in_ctx) {
+            free(c->handoff_in_ctx);
+            ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno, "Freeing handoff_in_ctx");
+        }
         ngx_http_close_connection(c);
         return;
     }

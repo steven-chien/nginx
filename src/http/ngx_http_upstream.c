@@ -702,6 +702,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
         ngx_memzero(u->state, sizeof(ngx_http_upstream_state_t));
     }
 
+//TODO do not cleanup
     cln = ngx_http_cleanup_add(r, 0);
     if (cln == NULL) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -761,6 +762,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
                 return;
             }
 
+            // TODO: NOT THIS ONE
             ngx_http_upstream_connect(r, u);
 
             return;
@@ -812,7 +814,7 @@ found:
 
     if (uscf == NULL) {
         ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0,
-                      "no upstream configuration");
+                      "upstream: no upstream configuration");
         ngx_http_upstream_finalize_request(r, u,
                                            NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
@@ -1229,6 +1231,7 @@ ngx_http_upstream_resolve_handler(ngx_resolver_ctx_t *ctx)
     ur = u->resolved;
 
     ngx_http_set_log_request(c->log, r);
+    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0, "ngx_http_upstream_resolve_handler()");
 
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http upstream resolve: \"%V?%V\"", &r->uri, &r->args);
@@ -1545,7 +1548,6 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
     }
 }
 
-
 static void
 ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
@@ -1574,6 +1576,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     u->state->connect_time = (ngx_msec_t) -1;
     u->state->header_time = (ngx_msec_t) -1;
 
+//ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "TEST!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     rc = ngx_event_connect_peer(&u->peer);
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,

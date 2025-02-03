@@ -12,6 +12,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
+#include "handoff.h"
 
 typedef struct ngx_listening_s  ngx_listening_t;
 
@@ -135,6 +136,15 @@ struct ngx_connection_s {
 
     ngx_listening_t    *listening;
 
+    /* XO starts */
+    uint8_t *send_buffer;
+    off_t send_buffer_len;
+    uint8_t *recv_buffer;
+    off_t recv_buffer_len;
+
+    struct handoff_out *handoff_out_ctx;
+    struct handoff_in  *handoff_in_ctx;
+    /* XO ends */
     off_t               sent;
 
     ngx_log_t          *log;

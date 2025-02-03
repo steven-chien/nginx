@@ -173,6 +173,7 @@ if [ $HTTP = YES ]; then
                       ngx_http_copy_filter_module \
                       ngx_http_range_body_filter_module \
                       ngx_http_not_modified_filter_module \
+                      ngx_http_hello_module \
                       ngx_http_slice_filter_module"
 
     if :; then

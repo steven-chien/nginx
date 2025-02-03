@@ -1,0 +1,395 @@
+#include <ngx_config.h>
+#include <ngx_core.h>
+#include <ngx_http.h>
+
+#include "handoff.h"
+
+extern uint8_t my_mac[6];
+extern struct sockaddr_in peer_sockaddr[3];
+extern int num_peers;
+extern struct sockaddr_in my_sockaddr;
+
+static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r);
+
+static uint8_t *eight_MB;
+
+static ngx_command_t ngx_http_handoff_in_commands[] = {
+    { ngx_string("handoff_in"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_NOARGS,
+      ngx_http_handoff_in,
+      0,
+      0,
+      NULL },
+
+      ngx_null_command
+};
+
+static ngx_http_module_t ngx_http_handoff_in_module_ctx = {
+    NULL,                                  /* preconfiguration */
+    NULL,                                  /* postconfiguration */
+
+    NULL,                                  /* create main configuration */
+    NULL,                                  /* init main configuration */
+
+    NULL,                                  /* create server configuration */
+    NULL,                                  /* merge server configuration */
+
+    NULL,                                  /* create location configuration */
+    NULL                                   /* merge location configuration */
+};
+
+ngx_module_t ngx_http_handoff_in_module = {
+    NGX_MODULE_V1,
+    &ngx_http_handoff_in_module_ctx,           /* module context */
+    ngx_http_handoff_in_commands,              /* module directives */
+    NGX_HTTP_MODULE,                      /* module type */
+    NULL,                                  /* init master */
+    NULL,                                  /* init module */
+    NULL,                                  /* init process */
+    NULL,                                  /* init thread */
+    NULL,                                  /* exit thread */
+    NULL,                                  /* exit process */
+    NULL,                                  /* exit master */
+    NGX_MODULE_V1_PADDING
+};
+
+static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    ngx_http_core_loc_conf_t *clcf;
+
+    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    clcf->handler = ngx_http_handoff_in_handler;
+    eight_MB = malloc(sizeof(uint8_t) * 1024 * 1024 * 8);
+    memset(eight_MB, 1, sizeof(uint8_t) * 1024 * 1024 * 8);
+
+    return NGX_CONF_OK;
+}
+
+void
+ngx_http_handoff_in_init(ngx_http_request_t *r)
+{
+    off_t         len;
+    ngx_buf_t    *b;
+    ngx_int_t     rc;
+    ngx_chain_t  *in, out;
+    struct handoff_in *handoff_in_ctx;
+    ngx_connection_t *c, *restored_conn;
+
+    c = r->connection;
+    handoff_in_ctx = c->handoff_in_ctx;
+
+    if (r->request_body == NULL) {
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    len = 0;
+
+    for (in = r->request_body->bufs; in; in = in->next) {
+        len += ngx_buf_size(in->buf);
+    }
+
+    b = ngx_create_temp_buf(r->pool, NGX_OFF_T_LEN);
+    if (b == NULL) {
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    b->last = ngx_sprintf(b->pos, "%O", len);
+    b->last_buf = (r == r->main) ? 1 : 0;
+    b->last_in_chain = 1;
+
+    //r->headers_out.status = NGX_HTTP_OK;
+    //r->headers_out.content_length_n = b->last - b->pos;
+    ngx_log_debug3(NGX_LOG_DEBUG_EVENT, c->log, 0, "recv http event fd=%d length=%d ready_len=%d", c->fd, r->headers_in.content_length_n, len);
+    //ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, " protobuf %s", r->request_body->bufs->buf->start+sizeof(uint32_t));
+
+    handoff_in_ctx->recv_protobuf_len      = r->headers_in.content_length_n;
+    handoff_in_ctx->recv_protobuf_received = r->headers_in.content_length_n;
+    SocketSerialize *migration_info = socket_serialize__unpack(NULL, handoff_in_ctx->recv_protobuf_len-sizeof(uint32_t), r->request_body->bufs->buf->start+sizeof(uint32_t));
+    if (migration_info == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "fail to unpack protobuf");
+        exit(EXIT_FAILURE);
+    }
+    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "unpack protobuf successful");
+
+    handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
+    restored_conn = ngx_get_connection(handoff_in_ctx->client_for_originaldone->fd, c->log);
+    assert(restored_conn != NULL);
+    ngx_reusable_connection(restored_conn, 1);
+
+    // create pool for connection
+    restored_conn->pool = ngx_create_pool(c->listening->pool_size, c->log);
+    assert(restored_conn->pool != NULL);
+
+    struct sockaddr_in* restored_conn_addr = (struct sockaddr_in*)ngx_pcalloc(restored_conn->pool, sizeof(struct sockaddr_in));
+    restored_conn->sockaddr = (struct sockaddr*)restored_conn_addr;
+ 
+    restored_conn_addr->sin_addr.s_addr = handoff_in_ctx->client_for_originaldone->client_addr;
+    restored_conn_addr->sin_port        = handoff_in_ctx->client_for_originaldone->client_port;
+    restored_conn_addr->sin_family      = AF_INET;
+
+    // mark this connection as handed off
+    restored_conn->handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
+
+    ngx_log_t *log = ngx_pcalloc(restored_conn->pool, sizeof(ngx_log_t));
+    assert(restored_conn->log != NULL);
+    *log = c->listening->log;
+
+    restored_conn->recv = ngx_recv;
+    restored_conn->send = ngx_send;
+    restored_conn->recv_chain = ngx_recv_chain;
+    restored_conn->send_chain = ngx_send_chain;
+
+    restored_conn->log = log;
+    restored_conn->pool->log = log;
+
+    restored_conn->socklen = sizeof(struct sockaddr_in);
+    restored_conn->listening      = c->listening;
+    restored_conn->local_sockaddr = c->listening->sockaddr;
+    restored_conn->local_socklen  = c->listening->socklen;
+
+    restored_conn->type = SOCK_STREAM;
+
+    restored_conn->read->ready = 1;
+
+    restored_conn->read->log = log;
+    restored_conn->write->log = log;
+
+    restored_conn->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
+    restored_conn->start_time = ngx_current_msec;
+    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "restored socket fd=%d", restored_conn->fd);
+
+    if (ngx_add_conn) {
+        if (ngx_add_conn(restored_conn) == NGX_ERROR) {
+            //ngx_debug_accepted_connection(restored_conn);
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Fail to add restored socket to epoll loop");
+            return;
+        }
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "aded restored socket to epoll loop");
+    }
+
+    log->data = NULL;
+    log->handler = NULL;
+    c->listening->handler(restored_conn);
+
+    // src IP modiication
+//char my_ip_address[100];
+//inet_ntop(AF_INET, &my_sockaddr.sin_addr, my_ip_address, 100);
+//printf("my ip is %s\n", my_ip_address);
+    rc = apply_redirection_ebpf(my_sockaddr.sin_addr.s_addr, migration_info->peer_addr,
+                                migration_info->self_port, migration_info->peer_port,
+                                migration_info->self_addr, my_mac, migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac,
+                                htons(ntohs(migration_info->self_port) - 1 - 1), migration_info->peer_port, false); // offst self port
+    assert(rc == 0);
+
+    // build response proto_buf
+    SocketSerialize migration_info_resp = SOCKET_SERIALIZE__INIT;
+    migration_info_resp.msg_type = HANDOFF_DONE;
+
+    migration_info_resp.self_addr = migration_info->self_addr;
+    migration_info_resp.peer_addr = migration_info->peer_addr;
+
+    // encode self mac in response for orginal server to perform redirection
+    memcpy(&(migration_info_resp.peer_mac), my_mac, sizeof(uint8_t) * 6);
+
+    // reply object size for original server to determine redirection method
+    //migration_info_resp.object_size = migration_info->object_size;
+    migration_info_resp.self_port = migration_info->self_port;
+    migration_info_resp.peer_port = migration_info->peer_port;
+
+    // no longer need
+    socket_serialize__free_unpacked(migration_info, NULL);
+
+    int proto_len = socket_serialize__get_packed_size(&migration_info_resp);
+    uint32_t net_proto_len = htonl(proto_len);
+    uint8_t *proto_buf = ngx_pcalloc(restored_conn->pool, sizeof(net_proto_len) + proto_len);
+    socket_serialize__pack(&migration_info_resp, proto_buf + sizeof(net_proto_len));
+    // add length of proto_buf at the begin
+    memcpy(proto_buf, &net_proto_len, sizeof(net_proto_len));
+
+    handoff_in_ctx->send_protobuf = proto_buf;
+    handoff_in_ctx->send_protobuf_len = sizeof(net_proto_len) + proto_len;
+    handoff_in_ctx->wait_for_originaldone = true;
+    handoff_in_ctx->restored_conn = restored_conn;
+
+    // repond to orignal server
+    rc = ngx_http_discard_request_body(r);
+
+    if (rc != NGX_OK) {
+        return;
+    }
+
+    r->headers_out.content_type.len = sizeof("text/plain") - 1;
+    r->headers_out.content_type.data = (u_char *) "text/plain";
+    r->headers_out.status = NGX_HTTP_OK;
+    r->headers_out.content_length_n = handoff_in_ctx->send_protobuf_len;
+
+    // reply client
+    restored_conn->log->action = "reading client request line";
+
+    rc = ngx_http_send_header(r);
+
+    if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+
+    if (b == NULL) {
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    out.buf = b;
+    out.next = NULL;
+
+    b->pos = (u_char *) handoff_in_ctx->send_protobuf;
+    b->last = b->pos + handoff_in_ctx->send_protobuf_len;
+    b->memory = 1;
+    b->last_buf = 1;
+    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, " resp protobuf %s", handoff_in_ctx->send_protobuf+sizeof(uint32_t));
+
+    rc = ngx_http_output_filter(r, &out);
+    if (rc != NGX_OK) {
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+    ngx_http_finalize_request(r, NGX_OK);
+}
+
+//ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
+//    int rc = -1;
+//
+//}
+static ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
+    ngx_int_t rc;
+    ngx_buf_t *b;
+    ngx_chain_t out;
+
+    r->request_body_in_single_buf = 1;
+    rc = ngx_http_discard_request_body(r);
+    if (rc != NGX_OK) {
+        return rc;
+    }
+
+    int payload_size = 0;
+    if (r->uri.len > 1) {
+        payload_size = atoi((char*)r->uri.data + sizeof(char));
+    }
+
+    r->keepalive = 1;
+    r->headers_out.content_type.len = sizeof("application/octet-stream") - 1;
+    r->headers_out.content_type.data = (u_char *) "applicatoin/octet-stream";
+    r->headers_out.status = NGX_HTTP_OK;
+    //r->headers_out.content_length_n = sizeof("HELLO FROM FAKE SERVER") - 1;
+    r->headers_out.content_length_n = payload_size;
+
+    rc = ngx_http_send_header(r);
+
+    if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
+        return rc;
+    }
+
+    b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+
+    if (b == NULL) {
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    out.buf = b;
+    out.next = NULL;
+
+    //b->pos = (u_char *) "HELLO FROM FAKE SERVER";
+    b->pos = (u_char *) eight_MB;
+    b->last = b->pos + payload_size;
+    b->memory = 1;
+    b->last_buf = 1;
+
+    return ngx_http_output_filter(r, &out);
+}
+
+
+static ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
+    ngx_int_t rc;
+    //ngx_buf_t *b;
+    //ngx_chain_t out;
+
+    if (r->connection->handoff_in_ctx == NULL) {
+        r->connection->handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
+ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
+
+        r->request_body_in_single_buf = 1;
+        r->keepalive = 1;
+        rc = ngx_http_read_client_request_body(r, ngx_http_handoff_in_init);
+        if (rc != NGX_OK) {
+            ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return NGX_ERROR;
+        }
+        return NGX_OK;
+    }
+    else if (r->connection->handoff_in_ctx != NULL && r->connection->handoff_in_ctx->wait_for_originaldone) {
+        ngx_connection_t *restored_conn = r->connection->handoff_in_ctx->restored_conn;
+ngx_blocking(restored_conn->fd);
+
+        r->connection->handoff_in_ctx->wait_for_originaldone = false;
+        //r->connection->handoff_in_ctx->restored_conn->handoff_in_ctx->wait_for_originaldone = false;
+if (r->connection->handoff_in_ctx->client_for_originaldone == NULL) {
+ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "client struct is empty!!!!!!!!!!!!!!!!!!!!l ");
+exit(1);
+}
+ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "sending first OK to client uri: %s", r->connection->handoff_in_ctx->client_for_originaldone->uri_str);
+
+        int payload_size = 1024;
+        if (strlen(r->connection->handoff_in_ctx->client_for_originaldone->uri_str) > 1)
+            payload_size = atoi(r->connection->handoff_in_ctx->client_for_originaldone->uri_str + sizeof(char));
+        size_t total_header_len = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
+        uint8_t *buffer = malloc(total_header_len * sizeof(char) + 1 + payload_size + 1);
+        memset(buffer, 1, total_header_len * sizeof(char) + 1 + payload_size + 1);
+        snprintf((char*)buffer, total_header_len + 1, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
+
+        restored_conn->send(restored_conn, buffer, total_header_len*sizeof(char) + payload_size);
+        free(buffer);
+        // handle unblocking and reply to client ehre
+        ngx_nonblocking(restored_conn->fd);
+
+        //r->keepalive = 1;
+        rc = ngx_http_discard_request_body(r);
+        ngx_http_finalize_request(r, NGX_OK);
+        ngx_close_connection(r->connection);
+
+        return NGX_OK;
+    }
+
+    return xo_handle_http_request(r);
+
+////    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "handling uri: \"%V\"", r->uri);
+//    r->keepalive = 1;
+//    r->headers_out.content_type.len = sizeof("text/plain") - 1;
+//    r->headers_out.content_type.data = (u_char *) "text/plain";
+//    r->headers_out.status = NGX_HTTP_OK;
+//    r->headers_out.content_length_n = sizeof("HELLO FROM FAKE SERVER") - 1;
+//
+//    rc = ngx_http_send_header(r);
+//
+//    if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
+//        return rc;
+//    }
+//
+//    b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+//
+//    if (b == NULL) {
+//        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+//    }
+//
+//    out.buf = b;
+//    out.next = NULL;
+//
+//    b->pos = (u_char *) "HELLO FROM FAKE SERVER";
+//    b->last = b->pos + sizeof("HELLO FROM FAKE SERVER") - 1;
+//    b->memory = 1;
+//    b->last_buf = 1;
+//
+//    return ngx_http_output_filter(r, &out);
+}

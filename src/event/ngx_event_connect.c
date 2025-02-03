@@ -10,12 +10,10 @@
 #include <ngx_event.h>
 #include <ngx_event_connect.h>
 
-
 #if (NGX_HAVE_TRANSPARENT_PROXY)
 static ngx_int_t ngx_event_connect_set_transparent(ngx_peer_connection_t *pc,
     ngx_socket_t s);
 #endif
-
 
 ngx_int_t
 ngx_event_connect_peer(ngx_peer_connection_t *pc)
@@ -253,6 +251,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         if (rc == -1) {
 
             /* NGX_EINPROGRESS */
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, pc->log, 0, "connecting in progress");
 
             return NGX_AGAIN;
         }
