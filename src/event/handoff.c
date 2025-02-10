@@ -1143,7 +1143,7 @@ void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migratio
         //struct in_addr inp;
         //inet_aton("192.168.11.33", &inp);
         server_sin.sin_port = htons(ntohs(migration_info->self_port));
-	server_sin.sin_addr.s_addr = my_sockaddr.sin_addr.s_addr;
+	server_sin.sin_addr.s_addr = in_ctx->ngx_conf->my_sockaddr.sin_addr.s_addr;
 	ret = bind(rfd, (struct sockaddr *)&server_sin, sizeof(server_sin));
 if (ret != 0) {
 ngx_log_debug1(NGX_LOG_DEBUG_EVENT, log, 0, "restored socket fail to bind : %s", strerror(errno));

@@ -225,9 +225,6 @@ main(int argc, char *const *argv)
         }
     }
 
-    //int err = init_forward("ens1f0np0", "ingress", "1:");
-    int err = init_forward(ifname, "ingress", "1:");
-    assert( err >= 0 );
     //err = zlog_init("/etc/zlog.conf");
     //assert( err == 0 );
     /* TODO */ ngx_max_sockets = -1;

@@ -2,12 +2,20 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#include <sys/ioctl.h>
+#include <net/if.h>
+
+#include <net/if_arp.h>
+
+
 #include "handoff.h"
 
 extern uint8_t my_mac[6];
 extern struct sockaddr_in peer_sockaddr[3];
 extern int num_peers;
 extern struct sockaddr_in my_sockaddr;
+
+static void *ngx_http_handoff_in_create_loc_conf(ngx_conf_t *cf);
 
 static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r);
@@ -16,7 +24,7 @@ static uint8_t *eight_MB;
 
 static ngx_command_t ngx_http_handoff_in_commands[] = {
     { ngx_string("handoff_in"),
-      NGX_HTTP_LOC_CONF|NGX_CONF_NOARGS,
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_http_handoff_in,
       0,
       0,
@@ -35,7 +43,7 @@ static ngx_http_module_t ngx_http_handoff_in_module_ctx = {
     NULL,                                  /* create server configuration */
     NULL,                                  /* merge server configuration */
 
-    NULL,                                  /* create location configuration */
+    ngx_http_handoff_in_create_loc_conf,   /* create location configuration */
     NULL                                   /* merge location configuration */
 };
 
@@ -54,10 +62,54 @@ ngx_module_t ngx_http_handoff_in_module = {
     NGX_MODULE_V1_PADDING
 };
 
-static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
-    ngx_http_core_loc_conf_t *clcf;
+static void *
+ngx_http_handoff_in_create_loc_conf(ngx_conf_t *cf)
+{
+    ngx_http_handoff_in_loc_conf_t  *my_conf;
 
-    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    my_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_handoff_in_loc_conf_t));
+    if (my_conf == NULL) {
+        return NULL;
+    }
+
+    return my_conf;
+}
+
+static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    ngx_http_core_loc_conf_t *clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    ngx_http_handoff_in_loc_conf_t *my_conf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_handoff_in_module);
+
+    ngx_str_t *value = cf->args->elts;
+    if (cf->args->nelts != 2) {
+        return NGX_CONF_ERROR;
+    }
+
+    strncpy(my_conf->ifname, (char*)value[1].data, value[1].len);
+    my_conf->ifname[value[1].len] = 0;
+
+#include "util.h"
+    struct ifreq ifr;
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    ifr.ifr_addr.sa_family = AF_INET;
+    strncpy(ifr.ifr_name, my_conf->ifname , IFNAMSIZ);
+
+    if (ioctl(fd, SIOCGIFADDR, &ifr) == -1 ) {
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(&my_conf->my_sockaddr, (struct sockaddr_in *)&ifr.ifr_addr, sizeof(struct sockaddr_in));
+
+    // Perform the IOCTL operation to fetch the hardware address
+    if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1) {
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(my_conf->my_mac, ifr.ifr_hwaddr.sa_data, 6);
+    close(fd);
+
+
     clcf->handler = ngx_http_handoff_in_handler;
     eight_MB = malloc(sizeof(uint8_t) * 1024 * 1024 * 8);
     memset(eight_MB, 1, sizeof(uint8_t) * 1024 * 1024 * 8);
@@ -74,9 +126,11 @@ ngx_http_handoff_in_init(ngx_http_request_t *r)
     ngx_chain_t  *in, out;
     struct handoff_in *handoff_in_ctx;
     ngx_connection_t *c, *restored_conn;
+    ngx_http_handoff_in_loc_conf_t *my_conf;
 
     c = r->connection;
     handoff_in_ctx = c->handoff_in_ctx;
+    my_conf = handoff_in_ctx->ngx_conf;
 
     if (r->request_body == NULL) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -174,12 +228,9 @@ ngx_http_handoff_in_init(ngx_http_request_t *r)
     c->listening->handler(restored_conn);
 
     // src IP modiication
-//char my_ip_address[100];
-//inet_ntop(AF_INET, &my_sockaddr.sin_addr, my_ip_address, 100);
-//printf("my ip is %s\n", my_ip_address);
-    rc = apply_redirection_ebpf(my_sockaddr.sin_addr.s_addr, migration_info->peer_addr,
+    rc = apply_redirection_ebpf(my_conf->my_sockaddr.sin_addr.s_addr, migration_info->peer_addr,
                                 migration_info->self_port, migration_info->peer_port,
-                                migration_info->self_addr, my_mac, migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac,
+                                migration_info->self_addr, my_conf->my_mac, migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac,
                                 htons(ntohs(migration_info->self_port) - 1 - 1), migration_info->peer_port, false); // offst self port
     assert(rc == 0);
 
@@ -259,10 +310,6 @@ ngx_http_handoff_in_init(ngx_http_request_t *r)
     ngx_http_finalize_request(r, NGX_OK);
 }
 
-//ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
-//    int rc = -1;
-//
-//}
 static ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
     ngx_int_t rc;
     ngx_buf_t *b;
@@ -283,7 +330,6 @@ static ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
     r->headers_out.content_type.len = sizeof("application/octet-stream") - 1;
     r->headers_out.content_type.data = (u_char *) "applicatoin/octet-stream";
     r->headers_out.status = NGX_HTTP_OK;
-    //r->headers_out.content_length_n = sizeof("HELLO FROM FAKE SERVER") - 1;
     r->headers_out.content_length_n = payload_size;
 
     rc = ngx_http_send_header(r);
@@ -301,7 +347,6 @@ static ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
     out.buf = b;
     out.next = NULL;
 
-    //b->pos = (u_char *) "HELLO FROM FAKE SERVER";
     b->pos = (u_char *) eight_MB;
     b->last = b->pos + payload_size;
     b->memory = 1;
@@ -313,12 +358,11 @@ static ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
 
 static ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
     ngx_int_t rc;
-    //ngx_buf_t *b;
-    //ngx_chain_t out;
 
     if (r->connection->handoff_in_ctx == NULL) {
         r->connection->handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
-ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
+        r->connection->handoff_in_ctx->ngx_conf = ngx_http_get_module_loc_conf(r, ngx_http_handoff_in_module);
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
 
         r->request_body_in_single_buf = 1;
         r->keepalive = 1;
@@ -363,33 +407,4 @@ ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "sending first OK to c
     }
 
     return xo_handle_http_request(r);
-
-////    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "handling uri: \"%V\"", r->uri);
-//    r->keepalive = 1;
-//    r->headers_out.content_type.len = sizeof("text/plain") - 1;
-//    r->headers_out.content_type.data = (u_char *) "text/plain";
-//    r->headers_out.status = NGX_HTTP_OK;
-//    r->headers_out.content_length_n = sizeof("HELLO FROM FAKE SERVER") - 1;
-//
-//    rc = ngx_http_send_header(r);
-//
-//    if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
-//        return rc;
-//    }
-//
-//    b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
-//
-//    if (b == NULL) {
-//        return NGX_HTTP_INTERNAL_SERVER_ERROR;
-//    }
-//
-//    out.buf = b;
-//    out.next = NULL;
-//
-//    b->pos = (u_char *) "HELLO FROM FAKE SERVER";
-//    b->last = b->pos + sizeof("HELLO FROM FAKE SERVER") - 1;
-//    b->memory = 1;
-//    b->last_buf = 1;
-//
-//    return ngx_http_output_filter(r, &out);
 }
