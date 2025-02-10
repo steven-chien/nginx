@@ -4,11 +4,42 @@
 #include <string.h>
 #include <time.h>
 
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <net/if_arp.h>
+#include <net/if.h>
+
 #include "util.h"
 
 void print_mac_address(unsigned char *mac) {
 	printf("%02x:%02x:%02x:%02x:%02x:%02x\n", 
 		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+int get_mac_address(const char *ifname, struct sockaddr_in addr, uint8_t *mac) {
+    struct arpreq arp_req;
+    int sock_fd;
+    memset(&arp_req, 0, sizeof(struct arpreq));
+    struct sockaddr_in *sin = (struct sockaddr_in *)&arp_req.arp_pa;
+    sin->sin_family = AF_INET;
+    sin->sin_addr = addr.sin_addr;
+
+    if ((sock_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("socket failed");
+        return -1;
+    }
+
+    //strncpy(arp_req.arp_dev, ifname, IFNAMSIZ-1);
+    strncpy(arp_req.arp_dev, ifname, IF_NAMESIZE-1);
+    if (ioctl(sock_fd, SIOCGARP, &arp_req) == -1) {
+        close(sock_fd);
+        return -1;
+    }
+
+    memcpy(mac, arp_req.arp_ha.sa_data, sizeof(uint8_t) * 6);
+
+    close(sock_fd);
+    return 0;
 }
 
 void hexdump(const char *title, void *buf, size_t len)

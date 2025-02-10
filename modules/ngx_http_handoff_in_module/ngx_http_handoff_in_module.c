@@ -10,11 +10,6 @@
 
 #include "handoff.h"
 
-extern uint8_t my_mac[6];
-extern struct sockaddr_in peer_sockaddr[3];
-extern int num_peers;
-extern struct sockaddr_in my_sockaddr;
-
 static void *ngx_http_handoff_in_create_loc_conf(ngx_conf_t *cf);
 
 static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -242,7 +237,7 @@ ngx_http_handoff_in_init(ngx_http_request_t *r)
     migration_info_resp.peer_addr = migration_info->peer_addr;
 
     // encode self mac in response for orginal server to perform redirection
-    memcpy(&(migration_info_resp.peer_mac), my_mac, sizeof(uint8_t) * 6);
+    memcpy(&(migration_info_resp.peer_mac), my_conf->my_mac, sizeof(uint8_t) * 6);
 
     // reply object size for original server to determine redirection method
     //migration_info_resp.object_size = migration_info->object_size;
