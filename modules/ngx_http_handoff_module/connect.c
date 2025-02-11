@@ -61,14 +61,23 @@ ngx_int_t connect_to_upstream(ngx_http_request_t *r,
     wev->data = upstream_conn;
 
     struct sockaddr_in sockaddr;
-    memcpy(&sockaddr, &handoff_out_ctx->ngx_conf->peer_sockaddr[handoff_out_ctx->peer_to_connect], sizeof(struct sockaddr_in));
+    if (handoff_out_ctx->client->to_migrate != -1) {
+        // handoff from frontend
+        memcpy(&sockaddr, &handoff_out_ctx->ngx_conf->peer_sockaddr[handoff_out_ctx->client->to_migrate], sizeof(struct sockaddr_in));
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "Connecting back to backend");
+    }
+    else {
+        // handoff back to frontend
+        memcpy(&sockaddr, &r->connection->handoff_in_ctx->frontend_sockaddr, sizeof(struct sockaddr_in));
+        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "Connecting back to frontend %s", inet_ntoa(sockaddr.sin_addr));
+    }
 
     if (ngx_add_conn) {
         rc = ngx_add_conn(upstream_conn);
         assert(rc != NGX_ERROR);
     }
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, r->connection->log, 0,
-                   "connect to upstream peer %d, fd:%d #%uA", upstream_conn->handoff_out_ctx->peer_to_connect, upstream_conn->number);
+                   "connect to upstream peer %d, fd:%d #%uA", upstream_conn->handoff_out_ctx->client->to_migrate, upstream_conn->number);
 
     rc = connect(s, (struct sockaddr*)&sockaddr, sizeof(sockaddr));
     if (rc == -1 && ngx_socket_errno != NGX_EINPROGRESS) {

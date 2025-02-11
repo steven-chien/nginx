@@ -30,7 +30,9 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
             ngx_close_connection(c);
             return;
         }
-ngx_blocking(c->fd);
+
+        // block socket until send
+        ngx_blocking(c->fd);
 
         ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock read event fd=%d received=%d: %s", c->fd, rc, c->recv_buffer);
         rc = ngx_del_event(ev, NGX_READ_EVENT, NGX_CLEAR_EVENT); 
@@ -66,7 +68,7 @@ ngx_blocking(c->fd);
  
         rc = apply_redirection_ebpf(migration_info->peer_addr, migration_info->self_addr,
                                     migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1),
-                                    migration_info->peer_addr, my_conf->my_mac, my_conf->peer_sockaddr[handoff_out_ctx->peer_to_connect].sin_addr.s_addr, fake_server_mac,
+                                    migration_info->peer_addr, my_conf->my_mac, my_conf->peer_sockaddr[handoff_out_ctx->client->to_migrate].sin_addr.s_addr, fake_server_mac,
                                     migration_info->peer_port, migration_info->self_port, false);
         assert(rc == 0);
 
@@ -76,9 +78,8 @@ ngx_blocking(c->fd);
         c->send_buffer = calloc(c->send_buffer_len, sizeof(uint8_t));
         snprintf((char*)c->send_buffer, c->send_buffer_len, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nContent-Length: 5\r\nAccept: */*\r\n\r\nDONE");
 
-rc = c->send(c, c->send_buffer, c->send_buffer_len);
-ngx_nonblocking(c->fd);
-
+        rc = c->send(c, c->send_buffer, c->send_buffer_len);
+        ngx_nonblocking(c->fd);
     }
 }
 
@@ -141,18 +142,17 @@ ngx_log_debug3(NGX_LOG_DEBUG_HTTP,c->log, 0, "header length=%d protbuf len=%d to
 ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
     ngx_int_t rc;
     ngx_connection_t *upstream_conn;
+    struct handoff_out *handoff_out_ctx = r->connection->handoff_out_ctx;
+    struct handoff_in  *handoff_in_ctx  = r->connection->handoff_in_ctx;
+    ngx_http_handoff_main_conf_t *my_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
 
     // fresh connection - init handoff
-    if (r->connection->handoff_in_ctx == NULL) {
-        ngx_http_handoff_main_conf_t *my_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
+    if (handoff_out_ctx == NULL) {
         struct handoff_out *handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
-
         handoff_out_ctx->ngx_conf = my_conf;
-        handoff_out_ctx->peer_to_connect = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
-
         struct http_client *client = create_http_client(0, r->connection->fd);
-        struct sockaddr_in* addr = (struct sockaddr_in*)r->connection->sockaddr;
 
+        struct sockaddr_in* addr = (struct sockaddr_in*)r->connection->sockaddr;
         rc = get_mac_address(my_conf->ifname, *addr, client->client_mac);
         assert(rc == 0);
 
@@ -163,12 +163,21 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
         client->uri_str_len = r->uri.len;
 
         handoff_out_ctx->client = client;
-        handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
 
+        if (handoff_in_ctx == NULL) {
+            client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
+            client->from_migrate = -1;
+        }
+        else if (handoff_in_ctx != NULL) {
+            client->to_migrate = -1;
+            client->from_migrate = handoff_in_ctx->client_for_originaldone->from_migrate;
+
+        }
+
+        handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
         rc = connect_to_upstream(r, handoff_out_ctx, handoff_out_connect_handler, &upstream_conn);
         assert(rc != NGX_ERROR);
-
-        return NGX_OK;
     }
+
     return NGX_OK;
 }

@@ -75,8 +75,12 @@ struct handoff_in {
         struct http_client *client_to_handoff_again;
         bool wait_for_originaldone;
         struct http_client *client_for_originaldone;
+
         ngx_connection_t *restored_conn;
         ngx_http_handoff_main_conf_t *ngx_conf;
+
+        struct sockaddr_in frontend_sockaddr;
+        int req_counter;
 };
 
 struct handoff_out_req;
@@ -96,7 +100,7 @@ struct handoff_out {
         bool is_fd_connected;
         bool is_fd_in_epoll;
         int reconnect_count;
-        int osd_arr_index;
+        //int osd_arr_index;
         int thread_id;
         struct handoff_out_queue *queue;
         // handoff out request currently sending out, deququed from queue
@@ -104,8 +108,6 @@ struct handoff_out {
         uint8_t *recv_protobuf;
         uint32_t recv_protobuf_len;
         uint32_t recv_protobuf_received;
-        int peer_to_connect;
-        int peer_2_connect;
 	ngx_http_handoff_main_conf_t *ngx_conf;
 };
 

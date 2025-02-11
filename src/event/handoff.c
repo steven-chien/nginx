@@ -297,7 +297,7 @@ void handoff_out_serialize(struct http_client *client, ngx_log_t *log)
 				client->client_port, self_sin.sin_port, true);
 	assert(ret == 0);
 	////zlog_debug(zlog_handoff, "Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
-ngx_log_debug0(NGX_LOG_DEBUG_EVENT, log, 0, "ngx_event_connect_serialized before");
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, log, 0, "ngx_event_connect_serialized before");
 
 // check if established
 	slen = sizeof(info);
@@ -407,6 +407,7 @@ exit(1);
 	migration_info.msg_type = HANDOFF_REQUEST;
 	if (client->from_migrate != -1) {
 		migration_info.msg_type = HANDOFF_BACK_REQUEST;
+		ngx_log_debug0(NGX_LOG_DEBUG_EVENT, log, 0, "Seriailize HANDOFF_BACK_REQUEST");
 	}
 
 	//tcp variables setting up
@@ -1093,20 +1094,9 @@ static int restore_queue_send(int fd, char *buf, int outq_len, int unsq_len)
 	return 0;
 }
 
-//static void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info)
 void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info, ngx_log_t *log)
 {
 	int ret = -1;
-	//uint64_t psize = 0;
-	//time_t pmtime;
-
-//	rados_completion_t comp;
-//	if ((migration_info->msg_type == HANDOFF_BACK_REQUEST && migration_info->acting_primary_osd_id == get_my_osd_id()) || migration_info->msg_type == HANDOFF_REQUEST) {
-//		ret = rados_aio_create_completion(NULL, NULL, NULL, &comp);
-//		assert(ret == 0);
-//		ret = rados_aio_stat(in_ctx->data_io_ctx, migration_info->object_name, comp, &psize, &pmtime);
-//		assert(ret == 0);
-//	}
 
 	int rfd;
 	struct sockaddr_in server_sin, client_sin;
@@ -1135,20 +1125,18 @@ void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migratio
 	//assert(errno == 0);
 
 	server_sin.sin_family = AF_INET;
-//	if (migration_info->msg_type == HANDOFF_BACK_REQUEST || migration_info->msg_type == HANDOFF_RESET_REQUEST)
-//		server_sin.sin_port = htons(ntohs(migration_info->self_port) - get_my_osd_id() - 1);
-//	else
-//		server_sin.sin_port = migration_info->self_port;
+	if (migration_info->msg_type == HANDOFF_BACK_REQUEST || migration_info->msg_type == HANDOFF_RESET_REQUEST)
+		server_sin.sin_port = htons(ntohs(migration_info->self_port) - 1 - 1);
+	else
+		server_sin.sin_port = migration_info->self_port;
 
-        //struct in_addr inp;
-        //inet_aton("192.168.11.33", &inp);
         server_sin.sin_port = htons(ntohs(migration_info->self_port));
 	server_sin.sin_addr.s_addr = in_ctx->ngx_conf->my_sockaddr.sin_addr.s_addr;
 	ret = bind(rfd, (struct sockaddr *)&server_sin, sizeof(server_sin));
-if (ret != 0) {
-ngx_log_debug1(NGX_LOG_DEBUG_EVENT, log, 0, "restored socket fail to bind : %s", strerror(errno));
-exit(EXIT_FAILURE);
-}
+	if (ret != 0) {
+		ngx_log_debug1(NGX_LOG_DEBUG_EVENT, log, 0, "restored socket fail to bind : %s", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 	//assert(ret == 0);
 	//assert(errno == 0);
 
