@@ -10,9 +10,11 @@
 #include "util.h"
 #include "handoff.h"
 #include "http_client.h"
+#include "ngx_http_handoff_module.h"
 
 #include "connect.h"
 #include "handoff_in.h"
+#include "handoff_out.h"
 
 static char *ngx_http_handoff_set_target(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_handoff_set_ifname(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -20,16 +22,7 @@ static char *ngx_http_handoff_set_ifname(ngx_conf_t *cf, ngx_command_t *cmd, voi
 static char *ngx_http_handoff_out(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
-static ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r);
-static ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r);
-
 static void *ngx_http_handoff_create_main_conf(ngx_conf_t *cf);
-
-extern uint8_t *eight_MB;
-
-static int my_random(int min, int max){
-   return min + rand() / (RAND_MAX / (max - min + 1) + 1);
-}
 
 static ngx_command_t ngx_http_handoff_commands[] = {
     { ngx_string("handoff_out"),
@@ -93,7 +86,6 @@ ngx_module_t ngx_http_handoff_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
 static char *ngx_http_handoff_out(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     ngx_http_core_loc_conf_t *clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     clcf->handler = ngx_http_handoff_out_handler;
@@ -103,7 +95,6 @@ static char *ngx_http_handoff_out(ngx_conf_t *cf, ngx_command_t *cmd, void *conf
 
 static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     ngx_http_core_loc_conf_t *clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-
     clcf->handler = ngx_http_handoff_in_handler;
 
     eight_MB = malloc(sizeof(uint8_t) * 1024 * 1024 * 8);
@@ -172,94 +163,6 @@ static char *ngx_http_handoff_set_target(ngx_conf_t *cf, ngx_command_t *cmd, voi
     my_conf->num_peers++;
 
     return NGX_CONF_OK;
-}
-
-static ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
-    ngx_int_t rc;
-    ngx_connection_t *upstream_conn;
-
-    // fresh connection - init handoff
-    if (r->connection->handoff_in_ctx == NULL) {
-        ngx_http_handoff_main_conf_t *my_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
-        struct handoff_out *handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
-
-        handoff_out_ctx->ngx_conf = my_conf;
-        handoff_out_ctx->peer_to_connect = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
-
-        struct http_client *client = create_http_client(0, r->connection->fd);
-        struct sockaddr_in* addr = (struct sockaddr_in*)r->connection->sockaddr;
-
-        rc = get_mac_address(my_conf->ifname, *addr, client->client_mac);
-        assert(rc == 0);
-
-        client->client_addr = addr->sin_addr.s_addr;
-        client->client_port = addr->sin_port;
-        strncpy(client->uri_str, (char*)r->uri.data, r->uri.len);
-        client->uri_str[r->uri.len] = '\0';
-        client->uri_str_len = r->uri.len;
-
-        handoff_out_ctx->client = client;
-        handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
-
-        rc = connect_to_upstream(r, handoff_out_ctx, handoff_out_connect_handler, &upstream_conn);
-        assert(rc != NGX_ERROR);
-
-        return NGX_OK;
-    }
-    return NGX_OK;
-}
-
-static ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
-    ngx_int_t rc;
-
-    if (r->connection->handoff_in_ctx == NULL) {
-        r->connection->handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
-        r->connection->handoff_in_ctx->ngx_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
-
-        r->request_body_in_single_buf = 1;
-        r->keepalive = 1;
-        rc = ngx_http_read_client_request_body(r, ngx_http_handoff_in_init);
-        if (rc != NGX_OK) {
-            ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-            return NGX_ERROR;
-        }
-        return NGX_OK;
-    }
-    else if (r->connection->handoff_in_ctx != NULL && r->connection->handoff_in_ctx->wait_for_originaldone) {
-        ngx_connection_t *restored_conn = r->connection->handoff_in_ctx->restored_conn;
-        ngx_blocking(restored_conn->fd);
-
-        r->connection->handoff_in_ctx->wait_for_originaldone = false;
-        //r->connection->handoff_in_ctx->restored_conn->handoff_in_ctx->wait_for_originaldone = false;
-if (r->connection->handoff_in_ctx->client_for_originaldone == NULL) {
-ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "client struct is empty!!!!!!!!!!!!!!!!!!!!l ");
-exit(1);
-}
-ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "sending first OK to client uri: %s", r->connection->handoff_in_ctx->client_for_originaldone->uri_str);
-
-        int payload_size = 0;
-        if (strlen(r->connection->handoff_in_ctx->client_for_originaldone->uri_str) > 1)
-            payload_size = atoi(r->connection->handoff_in_ctx->client_for_originaldone->uri_str + sizeof(char));
-        size_t total_header_len = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
-        uint8_t *buffer = malloc(total_header_len * sizeof(char) + 1 + payload_size + 1);
-        memset(buffer, 1, total_header_len * sizeof(char) + 1 + payload_size + 1);
-        snprintf((char*)buffer, total_header_len + 1, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
-
-        restored_conn->send(restored_conn, buffer, total_header_len*sizeof(char) + payload_size);
-        free(buffer);
-        // handle unblocking and reply to client ehre
-        ngx_nonblocking(restored_conn->fd);
-
-        //r->keepalive = 1;
-        rc = ngx_http_discard_request_body(r);
-        ngx_http_finalize_request(r, NGX_OK);
-        ngx_close_connection(r->connection);
-
-        return NGX_OK;
-    }
-
-    return xo_handle_http_request(r);
 }
 
 static void *ngx_http_handoff_create_main_conf(ngx_conf_t *cf)

@@ -5,6 +5,7 @@ ngx_module_deps=
 ngx_module_incs="$ngx_addon_dir" \
 ngx_module_srcs="$ngx_addon_dir/ngx_http_handoff_module.c \
                  $ngx_addon_dir/handoff_in.c \
+                 $ngx_addon_dir/handoff_out.c \
                  $ngx_addon_dir/connect.c"
 
 . auto/module
