@@ -136,7 +136,8 @@ static char *ngx_http_handoff_set_ifname(ngx_conf_t *cf, ngx_command_t *cmd, voi
     close(fd);
 
     // init lib forward
-    int err = init_forward(my_conf->ifname, "ingress", "1:");
+    //int err = init_forward(my_conf->ifname, "ingress", "1:");
+    int err = init_forward(my_conf->ifname, "ingress", "egress");
     assert( err >= 0 );
 
     return NGX_CONF_OK;

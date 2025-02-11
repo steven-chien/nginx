@@ -63,14 +63,27 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
                 exit(EXIT_FAILURE);
         }
 
-        uint8_t fake_server_mac[6];
-        memcpy(fake_server_mac, &(migration_info->peer_mac), sizeof(uint8_t) * 6);
- 
-        rc = apply_redirection_ebpf(migration_info->peer_addr, migration_info->self_addr,
-                                    migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1),
-                                    migration_info->peer_addr, my_conf->my_mac, my_conf->peer_sockaddr[handoff_out_ctx->client->to_migrate].sin_addr.s_addr, fake_server_mac,
-                                    migration_info->peer_port, migration_info->self_port, false);
-        assert(rc == 0);
+        if (handoff_out_ctx->client->from_migrate == -1) {
+            // normal handoff, insert redirection rule
+            uint8_t fake_server_mac[6];
+            memcpy(fake_server_mac, &(migration_info->peer_mac), sizeof(uint8_t) * 6);
+     
+            rc = apply_redirection_ebpf(migration_info->peer_addr, migration_info->self_addr,
+                                        migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1),
+                                        migration_info->peer_addr, my_conf->my_mac, my_conf->peer_sockaddr[handoff_out_ctx->client->to_migrate].sin_addr.s_addr, fake_server_mac,
+                                        migration_info->peer_port, migration_info->self_port, false);
+            assert(rc == 0);
+        }
+        else {
+            // handoff back, remove src IP modification
+            rc = remove_redirection_ebpf(migration_info->self_addr, migration_info->peer_addr,
+                                         migration_info->self_port, migration_info->peer_port);
+            assert(rc == 0);
+            // remove blocking rule installed duirng serialization
+            rc = remove_redirection_ebpf(migration_info->peer_addr, migration_info->self_addr,
+                                         migration_info->peer_port, migration_info->self_port);
+            assert(rc == 0);
+        }
 
         size_t header_len = snprintf(NULL, 0, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nContent-Length: 5\r\nAccept: */*\r\n\r\nDONE");
         c->send_buffer_len = header_len + 1;
@@ -146,7 +159,6 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
     struct handoff_in  *handoff_in_ctx  = r->connection->handoff_in_ctx;
     ngx_http_handoff_main_conf_t *my_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
 
-    // fresh connection - init handoff
     if (handoff_out_ctx == NULL) {
         struct handoff_out *handoff_out_ctx = ngx_pcalloc(r->connection->pool, sizeof(struct handoff_out));
         handoff_out_ctx->ngx_conf = my_conf;
@@ -165,13 +177,16 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
         handoff_out_ctx->client = client;
 
         if (handoff_in_ctx == NULL) {
-            client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
+            // fresh connection - init handoff
+printf("to hanodoff...");
             client->from_migrate = -1;
+            client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
         }
         else if (handoff_in_ctx != NULL) {
+printf("to hanodoff back...");
+            // migrated connection - handoff back
+            client->from_migrate = 1;
             client->to_migrate = -1;
-            client->from_migrate = handoff_in_ctx->client_for_originaldone->from_migrate;
-
         }
 
         handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
