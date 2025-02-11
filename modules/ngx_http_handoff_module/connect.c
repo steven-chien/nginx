@@ -32,7 +32,7 @@ ngx_blocking(c->fd);
 
         // apply redirection
         struct handoff_out *handoff_out_ctx = c->handoff_out_ctx;
-        ngx_http_handoff_out_loc_conf_t *my_conf = handoff_out_ctx->ngx_conf;
+        ngx_http_handoff_main_conf_t *my_conf = handoff_out_ctx->ngx_conf;
 
         char *ptr5;
         ptr5 = strstr((char*)c->recv_buffer, "\r\n\r\n") + 4;

@@ -48,13 +48,8 @@ typedef struct {
 
     struct sockaddr_in peer_sockaddr[MAX_PEERS];
     int num_peers;
-} ngx_http_handoff_out_loc_conf_t;
+} ngx_http_handoff_main_conf_t;
 
-typedef struct {
-    char ifname[64];
-    struct sockaddr_in my_sockaddr;
-    uint8_t my_mac[6];
-} ngx_http_handoff_in_loc_conf_t;
 
 enum {
         HANDOFF_REQUEST,
@@ -81,7 +76,7 @@ struct handoff_in {
         bool wait_for_originaldone;
         struct http_client *client_for_originaldone;
         ngx_connection_t *restored_conn;
-        ngx_http_handoff_in_loc_conf_t *ngx_conf;
+        ngx_http_handoff_main_conf_t *ngx_conf;
 };
 
 struct handoff_out_req;
@@ -111,7 +106,7 @@ struct handoff_out {
         uint32_t recv_protobuf_received;
         int peer_to_connect;
         int peer_2_connect;
-	ngx_http_handoff_out_loc_conf_t *ngx_conf;
+	ngx_http_handoff_main_conf_t *ngx_conf;
 };
 
 //void handoff_out_serialize_reset(struct http_client *client);
