@@ -117,12 +117,20 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     log->handler = NULL;
     c->listening->handler(restored_conn);
 
-    // src IP modiication
-    rc = apply_redirection_ebpf(my_conf->my_sockaddr.sin_addr.s_addr, migration_info->peer_addr,
-                                migration_info->self_port, migration_info->peer_port,
-                                migration_info->self_addr, my_conf->my_mac, migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac,
-                                htons(ntohs(migration_info->self_port) - 1 - 1), migration_info->peer_port, false); // offst self port
-    assert(rc == 0);
+    if (migration_info->msg_type == HANDOFF_REQUEST) {
+        // src IP modiication
+        rc = apply_redirection_ebpf(my_conf->my_sockaddr.sin_addr.s_addr, migration_info->peer_addr,
+                                    migration_info->self_port, migration_info->peer_port,
+                                    migration_info->self_addr, my_conf->my_mac, migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac,
+                                    htons(ntohs(migration_info->self_port) - 1 - 1), migration_info->peer_port, false); // offst self port
+        assert(rc == 0);
+    }
+    else if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
+        // remove redirection if this is handoff back
+        rc = remove_redirection_ebpf(migration_info->peer_addr, my_conf->my_sockaddr.sin_addr.s_addr,
+                                     migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1));
+        assert(rc == 0);
+    }
 
     // build response proto_buf
     SocketSerialize migration_info_resp = SOCKET_SERIALIZE__INIT;
