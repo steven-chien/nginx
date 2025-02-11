@@ -148,7 +148,7 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
 
     // fresh connection - init handoff
     if (handoff_out_ctx == NULL) {
-        struct handoff_out *handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
+        struct handoff_out *handoff_out_ctx = ngx_pcalloc(r->connection->pool, sizeof(struct handoff_out));
         handoff_out_ctx->ngx_conf = my_conf;
         struct http_client *client = create_http_client(0, r->connection->fd);
 

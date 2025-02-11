@@ -74,7 +74,7 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     restored_conn_addr->sin_family      = AF_INET;
 
     // mark this connection as handed off
-    restored_conn->handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
+    restored_conn->handoff_in_ctx = ngx_pcalloc(restored_conn->pool, sizeof(struct handoff_in));
 
     ngx_log_t *log = ngx_pcalloc(restored_conn->pool, sizeof(ngx_log_t));
     assert(restored_conn->log != NULL);
@@ -269,7 +269,7 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
     struct handoff_in *handoff_in_ctx = r->connection->handoff_in_ctx;
 
     if (handoff_in_ctx == NULL) {
-        handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
+        handoff_in_ctx = ngx_pcalloc(r->connection->pool, sizeof(struct handoff_in));
         handoff_in_ctx->ngx_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
 
