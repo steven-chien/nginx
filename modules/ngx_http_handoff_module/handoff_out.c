@@ -36,7 +36,6 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
 
         ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock read event fd=%d received=%d: %s", c->fd, rc, c->recv_buffer);
         rc = ngx_del_event(ev, NGX_READ_EVENT, NGX_CLEAR_EVENT); 
-        assert(rc == 0);
 
         // apply redirection
         struct handoff_out *handoff_out_ctx = c->handoff_out_ctx;
@@ -176,13 +175,13 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
 
         if (handoff_in_ctx == NULL || handoff_in_ctx->client_for_originaldone == NULL) {
             // fresh connection - init handoff
-printf("to hanodoff...");
+printf("to handoff...");
             client->from_migrate = -1;
             client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
             client->fd = r->connection->fd;
         }
         else {
-printf("to hanodoff back...");
+printf("to handoff back...");
             // migrated connection - handoff back
             client->from_migrate = 1;
             client->to_migrate = -1;
@@ -190,10 +189,13 @@ printf("to hanodoff back...");
         }
 
         handoff_out_ctx->client = client;
-        r->connection->handoff_out_ctx = handoff_out_ctx;
         handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
         rc = connect_to_upstream(r, handoff_out_ctx, handoff_out_connect_handler, &upstream_conn);
-        assert(rc != NGX_ERROR);
+        if (rc != NGX_OK && rc != NGX_AGAIN) {
+            ngx_log_error(NGX_LOG_ALERT, r->connection->log, ngx_errno, " connect to upstream fail");
+            return NGX_ERROR;
+        }
+        ngx_pfree(r->connection->pool, handoff_out_ctx);
     }
 
     return NGX_OK;

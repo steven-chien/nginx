@@ -3,6 +3,7 @@
 #include <ngx_event.h>
 #include <ngx_http.h>
 
+#include "handoff.h"
 #include "ngx_http_handoff_module.h"
 #include "connect.h"
 
@@ -21,12 +22,31 @@ ngx_int_t connect_to_upstream(ngx_http_request_t *r,
     s = ngx_socket(AF_INET, type, IPPROTO_TCP);
     assert(s != -1);
     upstream_conn = ngx_get_connection(s, r->connection->log);
-    assert(upstream_conn != NULL);
+    if (upstream_conn == NULL) {
+        if (ngx_close_socket(s) == -1) {
+            ngx_log_error(NGX_LOG_ALERT, r->connection->log, ngx_socket_errno,
+                          ngx_close_socket_n " upstream socket failed");
+        }
+    
+        return NGX_ERROR;
+    }
+
     ngx_reusable_connection(upstream_conn, 1);
     *conn = upstream_conn;
     upstream_conn->type = type;
     upstream_conn->data = r;
-    upstream_conn->handoff_out_ctx = handoff_out_ctx;
+
+    upstream_conn->pool = ngx_create_pool(r->connection->listening->pool_size, r->connection->log);
+    assert(upstream_conn->pool != NULL);
+
+    upstream_conn->log = ngx_pcalloc(upstream_conn->pool, sizeof(ngx_log_t));
+    *(upstream_conn->log) = r->connection->listening->log;
+    upstream_conn->pool->log = upstream_conn->log;
+
+    // ownership of this handoff_out_ctx should be the control conn to upstream
+    upstream_conn->handoff_out_ctx = ngx_pcalloc(upstream_conn->pool, sizeof(struct handoff_out));
+    memcpy(upstream_conn->handoff_out_ctx, handoff_out_ctx, sizeof(struct handoff_out));
+
     value = 1;
     rc = setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (const void *) &value, sizeof(int));
     assert(rc == 0);

@@ -60,6 +60,15 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
     restored_conn = ngx_get_connection(handoff_in_ctx->client_for_originaldone->fd, c->log);
     assert(restored_conn != NULL);
+    //if (restored_conn == NULL) {
+    //    if (ngx_close_socket(handoff_in_ctx->client_for_originaldone->fd) == -1) {
+    //        ngx_log_error(NGX_LOG_ALERT, c->log, ngx_socket_errno,
+    //                      ngx_close_socket_n " restored conn socket failed");
+    //    }
+    //
+    //    return;
+    //}
+
     ngx_reusable_connection(restored_conn, 1);
 
     // create pool for connection
@@ -279,6 +288,30 @@ ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
     return ngx_http_output_filter(r, &out);
 }
 
+static void handoff_in_write_handler(ngx_event_t *ev) {
+    int rc = 0;
+    size_t sent = 0;
+    ngx_connection_t *c = ev->data;
+    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock write event fd=%d", c->fd)    ;
+
+    sent = c->send(c, c->send_buffer + c->sent, c->send_buffer_len - c->sent);
+    if (sent == NGX_EAGAIN || c->sent < c->send_buffer_len) {
+        ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock write event fd=%d sent     %d/%ld", c->fd, c->sent, c->send_buffer_len);
+        rc = ngx_add_event(ev, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
+        assert(rc == 0);
+    }
+
+    if (c->sent >= c->send_buffer_len) {
+        free(c->send_buffer);
+        c->sent = 0;
+        c->send_buffer_len = 0;
+        // restore nginx's http write handler pointer
+        c->write->handler = c->handoff_in_ctx->original_write_handler;
+        rc = ngx_del_event(ev, NGX_WRITE_EVENT, NGX_CLEAR_EVENT);
+        assert(rc == 0);
+    }
+}
+
 ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
     ngx_int_t rc;
     struct handoff_in *handoff_in_ctx = r->connection->handoff_in_ctx;
@@ -303,7 +336,6 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
     }
     else if (handoff_in_ctx != NULL && handoff_in_ctx->wait_for_originaldone) {
         ngx_connection_t *restored_conn = handoff_in_ctx->restored_conn;
-        ngx_blocking(restored_conn->fd);
 
         handoff_in_ctx->wait_for_originaldone = false;
         if (handoff_in_ctx->client_for_originaldone == NULL) {
@@ -318,17 +350,18 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
 
         size_t total_header_len = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
 
-        uint8_t *buffer = malloc(total_header_len * sizeof(char) + 1 + payload_size + 1);
-        memset(buffer, 1, total_header_len * sizeof(char) + 1 + payload_size + 1);
+        restored_conn->send_buffer = calloc((total_header_len + 1 + payload_size + 1), sizeof(uint8_t));
+        restored_conn->send_buffer_len = total_header_len + payload_size;
+        //memset(restored_conn->send_buffer, 1, total_header_len * sizeof(char) + 1 + payload_size + 1);
 
-        snprintf((char*)buffer, total_header_len + 1, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
+        snprintf((char*)restored_conn->send_buffer, total_header_len + 1, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
 
-        restored_conn->send(restored_conn, buffer, total_header_len*sizeof(char) + payload_size);
-        free(buffer);
-        handoff_in_ctx->req_counter = 1;
+        // keep nginx's http write handler pointer and trigger write
+        restored_conn->handoff_in_ctx->original_write_handler = restored_conn->write->handler;
+        restored_conn->write->handler = handoff_in_write_handler;
+        rc = ngx_add_event(restored_conn->write, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
+        assert(rc == 0);
 
-        // handle unblocking and reply to client ehre
-        ngx_nonblocking(restored_conn->fd);
 
         rc = ngx_http_discard_request_body(r);
         ngx_http_finalize_request(r, NGX_OK);
@@ -337,7 +370,8 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
         return NGX_OK;
     }
 
-    if (handoff_in_ctx->req_counter > 1) {
+    if (handoff_in_ctx->req_counter > 100) {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
         return ngx_http_handoff_out_handler(r);
     }
 

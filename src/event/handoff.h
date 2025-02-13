@@ -78,6 +78,7 @@ struct handoff_in {
 
         ngx_connection_t *restored_conn;
         ngx_http_handoff_main_conf_t *ngx_conf;
+        ngx_event_handler_pt original_write_handler;
 
         struct sockaddr_in frontend_sockaddr;
         int req_counter;
