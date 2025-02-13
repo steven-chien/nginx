@@ -174,21 +174,28 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
         client->uri_str[r->uri.len] = '\0';
         client->uri_str_len = r->uri.len;
 
-        handoff_out_ctx->client = client;
-
-        if (handoff_in_ctx == NULL) {
+        if (handoff_in_ctx == NULL || handoff_in_ctx->client_for_originaldone == NULL) {
             // fresh connection - init handoff
 printf("to hanodoff...");
             client->from_migrate = -1;
             client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
+            client->fd = r->connection->fd;
         }
-        else if (handoff_in_ctx != NULL) {
+//        else if (handoff_in_ctx != NULL && handoff_in_ctx->client_for_originaldone->from_migrate != -1) {
+//printf("to hanodoff (not first time...");
+//            client->from_migrate = -1;
+//            client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
+//            client->fd = r->connection->fd;
+//        }
+        else {
 printf("to hanodoff back...");
             // migrated connection - handoff back
             client->from_migrate = 1;
             client->to_migrate = -1;
+            client->fd = handoff_in_ctx->restored_conn->fd;
         }
 
+        handoff_out_ctx->client = client;
         handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
         rc = connect_to_upstream(r, handoff_out_ctx, handoff_out_connect_handler, &upstream_conn);
         assert(rc != NGX_ERROR);

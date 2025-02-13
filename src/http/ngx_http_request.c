@@ -3418,16 +3418,6 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
     if (n == 0) {
         ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
                       "client %V closed keepalive connection", &c->addr_text);
-        if (c->handoff_out_ctx) { 
-            ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno, "Freeing handoff_out_ctx");
-            if (c->handoff_out_ctx->client) free(c->handoff_out_ctx->client);
-            free(c->handoff_out_ctx);
-            c->handoff_in_ctx = NULL;
-        }
-        if (c->handoff_in_ctx) {
-            free(c->handoff_in_ctx);
-            ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno, "Freeing handoff_in_ctx");
-        }
         ngx_http_close_connection(c);
         return;
     }

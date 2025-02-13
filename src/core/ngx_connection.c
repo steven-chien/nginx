@@ -1262,6 +1262,19 @@ ngx_close_connection(ngx_connection_t *c)
         return;
     }
 
+    if (c->handoff_out_ctx) { 
+        ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno, "Freeing handoff_out_ctx");
+        if (c->handoff_out_ctx->client) ngx_pfree(c->pool, c->handoff_out_ctx->client);
+        ngx_pfree(c->pool, c->handoff_out_ctx);
+        c->handoff_out_ctx = NULL;
+    }
+    if (c->handoff_in_ctx) {
+        if (c->handoff_in_ctx->client_for_originaldone) ngx_pfree(c->pool, c->handoff_in_ctx->client_for_originaldone);
+        ngx_pfree(c->pool, c->handoff_in_ctx->client_for_originaldone);
+        c->handoff_in_ctx = NULL;
+        ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno, "Freeing handoff_in_ctx");
+    }
+
     if (c->read->timer_set) {
         ngx_del_timer(c->read);
     }

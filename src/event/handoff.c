@@ -296,7 +296,7 @@ void handoff_out_serialize(struct http_client *client, ngx_log_t *log)
 				client->client_addr, client->client_mac, self_sin.sin_addr.s_addr, my_mac,
 				client->client_port, self_sin.sin_port, true);
 	assert(ret == 0);
-	////zlog_debug(zlog_handoff, "Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
+	ngx_log_debug3(NGX_LOG_DEBUG_EVENT, log, 0, "Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, log, 0, "ngx_event_connect_serialized before");
 
 // check if established
@@ -1130,7 +1130,6 @@ void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migratio
 	else
 		server_sin.sin_port = migration_info->self_port;
 
-        server_sin.sin_port = htons(ntohs(migration_info->self_port));
 	server_sin.sin_addr.s_addr = in_ctx->ngx_conf->my_sockaddr.sin_addr.s_addr;
 	ret = bind(rfd, (struct sockaddr *)&server_sin, sizeof(server_sin));
 	if (ret != 0) {
@@ -1272,6 +1271,10 @@ void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migratio
 		//client->from_migrate = osd_ids[in_ctx->osd_arr_index];
 		client->from_migrate = 0; //osd_ids[in_ctx->osd_arr_index];
 	}
+        else {
+		client->from_migrate = -1; //osd_ids[in_ctx->osd_arr_index];
+	}
+
 	memcpy(client->client_mac, &(migration_info->peer_mac), sizeof(uint8_t) * 6);
 
 	if (migration_info->ktlsbuf.len) {

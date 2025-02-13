@@ -118,6 +118,12 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     c->listening->handler(restored_conn);
 
     if (migration_info->msg_type == HANDOFF_REQUEST) {
+        // store the sockaddr of the front end
+        memset(&handoff_in_ctx->frontend_sockaddr, 0, sizeof(struct sockaddr_in));
+        handoff_in_ctx->frontend_sockaddr.sin_addr.s_addr = migration_info->self_addr;
+        handoff_in_ctx->frontend_sockaddr.sin_port        = my_conf->peer_sockaddr[0].sin_port;
+        handoff_in_ctx->frontend_sockaddr.sin_family      = AF_INET;
+
         // src IP modiication
         rc = apply_redirection_ebpf(my_conf->my_sockaddr.sin_addr.s_addr, migration_info->peer_addr,
                                     migration_info->self_port, migration_info->peer_port,
@@ -126,6 +132,7 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
         assert(rc == 0);
     }
     else if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
+        memcpy(&handoff_in_ctx->frontend_sockaddr, &my_conf->my_sockaddr, sizeof(struct sockaddr_in));
         // remove redirection if this is handoff back
         rc = remove_redirection_ebpf(migration_info->peer_addr, my_conf->my_sockaddr.sin_addr.s_addr,
                                      migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1));
@@ -161,22 +168,20 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     handoff_in_ctx->send_protobuf_len = sizeof(net_proto_len) + proto_len;
     handoff_in_ctx->restored_conn = restored_conn;
 
-    // store the sockaddr of the front end
-    memset(&handoff_in_ctx->frontend_sockaddr, 0, sizeof(struct sockaddr_in));
-    handoff_in_ctx->frontend_sockaddr.sin_addr.s_addr = migration_info->self_addr;
-    handoff_in_ctx->frontend_sockaddr.sin_port        = my_conf->peer_sockaddr[0].sin_port;
-    handoff_in_ctx->frontend_sockaddr.sin_family      = AF_INET;
-
     // done with handoff_in_ctx, store in restored conn for handoff back
     // subsequent requests will use the handoff_in_ctx in the upstream_conn, set to false
-    handoff_in_ctx->wait_for_originaldone = false;
     memcpy(restored_conn->handoff_in_ctx, handoff_in_ctx, sizeof(struct handoff_in));
 printf("restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_sockaddr.sin_addr));
-    memcpy(restored_conn->handoff_in_ctx->client_for_originaldone, handoff_in_ctx->client_for_originaldone, sizeof(struct http_client));
+    if (migration_info->msg_type == HANDOFF_REQUEST) {
+        memcpy(restored_conn->handoff_in_ctx->client_for_originaldone, handoff_in_ctx->client_for_originaldone, sizeof(struct http_client));
+    }
+    else if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
+        // restored connection should have appear as fresh without from_migrate
+        restored_conn->handoff_in_ctx->client_for_originaldone = NULL;
+    }
 
     // current request in needs to be retured immediately, special case
     handoff_in_ctx->wait_for_originaldone = true;
-
 
     // repond to orignal server
     rc = ngx_http_discard_request_body(r);
@@ -221,7 +226,8 @@ printf("restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_s
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
-    ngx_http_finalize_request(r, NGX_OK);
+
+     ngx_http_finalize_request(r, NGX_OK);
 }
 
 ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
