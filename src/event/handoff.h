@@ -112,7 +112,7 @@ struct handoff_out {
 	ngx_http_handoff_main_conf_t *ngx_conf;
 };
 
-//void handoff_out_serialize_reset(struct http_client *client);
+void handoff_out_serialize_reset(struct http_client *client, ngx_log_t *log);
 void handoff_out_serialize(struct http_client *client, ngx_log_t *log);
 
 //void handoff_out_connect(struct handoff_out *out_ctx);

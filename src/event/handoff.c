@@ -189,54 +189,56 @@ struct handoff_out_req {
 //	queue->num_requests--;
 //}
 //
-//// **special serialize for reset-handoff**
-//void handoff_out_serialize_reset(struct http_client *client)
-//{
-//	int ret;
-//	socklen_t slen;
-//
-//	struct sockaddr_in self_sin;
-//	bzero(&self_sin, sizeof(self_sin));
-//	self_sin.sin_family = AF_INET;
-//	slen = sizeof(self_sin);
-//	ret = getsockname(client->fd, (struct sockaddr *)&self_sin, &slen);
-//	assert(ret == 0);
-//
-//	// apply blocking
-//	ret = apply_redirection_ebpf(client->client_addr, self_sin.sin_addr.s_addr,
-//				client->client_port, self_sin.sin_port,
-//				client->client_addr, client->client_mac, self_sin.sin_addr.s_addr, my_mac,
-//				client->client_port, self_sin.sin_port, true);
-//	assert(ret == 0);
-//	//zlog_debug(zlog_handoff, "Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
-//
-//	// build reset proto_buf
-//	SocketSerialize migration_info_reset = SOCKET_SERIALIZE__INIT;
-//	migration_info_reset.msg_type = HANDOFF_RESET_REQUEST;
-//
-//	migration_info_reset.self_addr = self_sin.sin_addr.s_addr;
-//	migration_info_reset.self_port = self_sin.sin_port;
-//	migration_info_reset.peer_addr = client->client_addr;
-//	migration_info_reset.peer_port = client->client_port;
-//
-//	//zlog_debug(zlog_handoff, "Serializing connection: client(%" PRIu64 ":%d) server(%" PRIu64 ":%d) (fd=%d)",
-//		migration_info_reset.peer_addr, ntohs(migration_info_reset.peer_port),
-//		migration_info_reset.self_addr, ntohs(migration_info_reset.self_port), client->fd);
-//
-//	int proto_len = socket_serialize__get_packed_size(&migration_info_reset);
-//	uint32_t net_proto_len = htonl(proto_len);
-//	client->proto_buf = malloc(sizeof(net_proto_len) + proto_len);
-//	socket_serialize__pack(&migration_info_reset, client->proto_buf + sizeof(net_proto_len));
-//	// add length of proto_buf at the begin
-//	memcpy(client->proto_buf, &net_proto_len, sizeof(net_proto_len));
-//	client->proto_buf_sent = 0;
-//	client->proto_buf_len = sizeof(net_proto_len) + proto_len;
-//
-//	client->to_migrate = client->from_migrate;
-//
-//	close(client->fd);
-//	client->fd = -client->fd;
-//}
+// **special serialize for reset-handoff**
+void handoff_out_serialize_reset(struct http_client *client, ngx_log_t *log)
+{
+	int ret;
+	socklen_t slen;
+
+	struct sockaddr_in self_sin;
+	bzero(&self_sin, sizeof(self_sin));
+	self_sin.sin_family = AF_INET;
+	slen = sizeof(self_sin);
+	ret = getsockname(client->fd, (struct sockaddr *)&self_sin, &slen);
+	assert(ret == 0);
+
+	// apply blocking
+	ret = apply_redirection_ebpf(client->client_addr, self_sin.sin_addr.s_addr,
+				client->client_port, self_sin.sin_port,
+				client->client_addr, client->client_mac, self_sin.sin_addr.s_addr, my_mac,
+				client->client_port, self_sin.sin_port, true);
+	assert(ret == 0);
+	//zlog_debug(zlog_handoff, "Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
+
+	// build reset proto_buf
+	SocketSerialize migration_info_reset = SOCKET_SERIALIZE__INIT;
+	migration_info_reset.msg_type = HANDOFF_RESET_REQUEST;
+
+	migration_info_reset.self_addr = self_sin.sin_addr.s_addr;
+	migration_info_reset.self_port = self_sin.sin_port;
+	migration_info_reset.peer_addr = client->client_addr;
+	migration_info_reset.peer_port = client->client_port;
+
+        ngx_log_debug5(NGX_LOG_DEBUG_EVENT, log, 0, "Serializing connection: client(%" PRIu64 ":%d) server(%" PRIu64 ":%d) (fd=%d)", migration_info_reset.peer_addr, ntohs(migration_info_reset.peer_port), migration_info_reset.self_addr, ntohs(migration_info_reset.self_port), client->fd);
+
+	//zlog_debug(zlog_handoff, "Serializing connection: client(%" PRIu64 ":%d) server(%" PRIu64 ":%d) (fd=%d)",
+	//	migration_info_reset.peer_addr, ntohs(migration_info_reset.peer_port),
+	//	migration_info_reset.self_addr, ntohs(migration_info_reset.self_port), client->fd);
+
+	int proto_len = socket_serialize__get_packed_size(&migration_info_reset);
+	uint32_t net_proto_len = htonl(proto_len);
+	client->proto_buf = malloc(sizeof(net_proto_len) + proto_len);
+	socket_serialize__pack(&migration_info_reset, client->proto_buf + sizeof(net_proto_len));
+	// add length of proto_buf at the begin
+	memcpy(client->proto_buf, &net_proto_len, sizeof(net_proto_len));
+	client->proto_buf_sent = 0;
+	client->proto_buf_len = sizeof(net_proto_len) + proto_len;
+
+	client->to_migrate = client->from_migrate;
+
+	close(client->fd);
+	client->fd = -client->fd;
+}
 
 //// **special serialize for re-handoff**
 //static void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info)

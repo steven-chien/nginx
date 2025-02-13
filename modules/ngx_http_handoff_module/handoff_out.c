@@ -91,7 +91,9 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
         snprintf((char*)c->send_buffer, c->send_buffer_len, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nContent-Length: 5\r\nAccept: */*\r\n\r\nDONE");
 
         rc = c->send(c, c->send_buffer, c->send_buffer_len);
+        assert(rc == c->send_buffer_len);
         ngx_nonblocking(c->fd);
+        free(c->send_buffer);
     }
 }
 
@@ -173,12 +175,14 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
         client->uri_str[r->uri.len] = '\0';
         client->uri_str_len = r->uri.len;
 
+        struct sockaddr_in *sockaddr_to_connect;
         if (handoff_in_ctx == NULL || handoff_in_ctx->client_for_originaldone == NULL) {
             // fresh connection - init handoff
 printf("to handoff...");
             client->from_migrate = -1;
             client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
             client->fd = r->connection->fd;
+            sockaddr_to_connect = &handoff_out_ctx->ngx_conf->peer_sockaddr[client->to_migrate];
         }
         else {
 printf("to handoff back...");
@@ -186,11 +190,12 @@ printf("to handoff back...");
             client->from_migrate = 1;
             client->to_migrate = -1;
             client->fd = handoff_in_ctx->restored_conn->fd;
+            sockaddr_to_connect = &handoff_in_ctx->frontend_sockaddr;
         }
 
         handoff_out_ctx->client = client;
         handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
-        rc = connect_to_upstream(r, handoff_out_ctx, handoff_out_connect_handler, &upstream_conn);
+        rc = connect_to_upstream(sockaddr_to_connect, handoff_out_ctx, r->connection->listening->pool_size, handoff_out_connect_handler, r->connection->log, &upstream_conn);
         if (rc != NGX_OK && rc != NGX_AGAIN) {
             ngx_log_error(NGX_LOG_ALERT, r->connection->log, ngx_errno, " connect to upstream fail");
             return NGX_ERROR;

@@ -58,16 +58,9 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "unpack protobuf successful");
 
     handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
+
     restored_conn = ngx_get_connection(handoff_in_ctx->client_for_originaldone->fd, c->log);
     assert(restored_conn != NULL);
-    //if (restored_conn == NULL) {
-    //    if (ngx_close_socket(handoff_in_ctx->client_for_originaldone->fd) == -1) {
-    //        ngx_log_error(NGX_LOG_ALERT, c->log, ngx_socket_errno,
-    //                      ngx_close_socket_n " restored conn socket failed");
-    //    }
-    //
-    //    return;
-    //}
 
     ngx_reusable_connection(restored_conn, 1);
 
@@ -141,7 +134,8 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
                                     htons(ntohs(migration_info->self_port) - 1 - 1), migration_info->peer_port, false); // offst self port
         assert(rc == 0);
     }
-    else if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
+    else if (migration_info->msg_type == HANDOFF_BACK_REQUEST || migration_info->msg_type == HANDOFF_RESET_REQUEST) {
+        ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0, "Handoff back / reset (%d,%d)", ntohs(migration_info->peer_port), ntohs(migration_info->self_port) - 1 - 1);
         memcpy(&handoff_in_ctx->frontend_sockaddr, &my_conf->my_sockaddr, sizeof(struct sockaddr_in));
         // remove redirection if this is handoff back
         rc = remove_redirection_ebpf(migration_info->peer_addr, my_conf->my_sockaddr.sin_addr.s_addr,
@@ -362,7 +356,6 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
         rc = ngx_add_event(restored_conn->write, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
         assert(rc == 0);
 
-
         rc = ngx_http_discard_request_body(r);
         ngx_http_finalize_request(r, NGX_OK);
         ngx_close_connection(r->connection);
@@ -370,10 +363,10 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
         return NGX_OK;
     }
 
-    if (handoff_in_ctx->req_counter > 100) {
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
-        return ngx_http_handoff_out_handler(r);
-    }
+    //if (handoff_in_ctx->req_counter > 100) {
+    //    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
+    //    return ngx_http_handoff_out_handler(r);
+    //}
 
     return xo_handle_http_request(r);
 }
