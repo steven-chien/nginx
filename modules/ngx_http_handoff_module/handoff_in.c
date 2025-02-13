@@ -75,6 +75,7 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
 
     // mark this connection as handed off
     restored_conn->handoff_in_ctx = ngx_pcalloc(restored_conn->pool, sizeof(struct handoff_in));
+    restored_conn->handoff_in_ctx->client_for_originaldone = NULL;
 
     ngx_log_t *log = ngx_pcalloc(restored_conn->pool, sizeof(ngx_log_t));
     assert(restored_conn->log != NULL);

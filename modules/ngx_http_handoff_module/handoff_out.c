@@ -181,12 +181,6 @@ printf("to hanodoff...");
             client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
             client->fd = r->connection->fd;
         }
-//        else if (handoff_in_ctx != NULL && handoff_in_ctx->client_for_originaldone->from_migrate != -1) {
-//printf("to hanodoff (not first time...");
-//            client->from_migrate = -1;
-//            client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
-//            client->fd = r->connection->fd;
-//        }
         else {
 printf("to hanodoff back...");
             // migrated connection - handoff back
@@ -196,6 +190,7 @@ printf("to hanodoff back...");
         }
 
         handoff_out_ctx->client = client;
+        r->connection->handoff_out_ctx = handoff_out_ctx;
         handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
         rc = connect_to_upstream(r, handoff_out_ctx, handoff_out_connect_handler, &upstream_conn);
         assert(rc != NGX_ERROR);
