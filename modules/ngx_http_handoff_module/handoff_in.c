@@ -286,7 +286,7 @@ static void handoff_in_write_handler(ngx_event_t *ev) {
     int rc = 0;
     size_t sent = 0;
     ngx_connection_t *c = ev->data;
-    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock write event fd=%d", c->fd)    ;
+    ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock write event fd=%d %s", c->fd, c->send_buffer);
 
     sent = c->send(c, c->send_buffer + c->sent, c->send_buffer_len - c->sent);
     if (sent == NGX_EAGAIN || c->sent < c->send_buffer_len) {
@@ -313,6 +313,7 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
     if (handoff_in_ctx == NULL) {
         handoff_in_ctx = ngx_pcalloc(r->connection->pool, sizeof(struct handoff_in));
         handoff_in_ctx->ngx_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
+        handoff_in_ctx->req_counter = 0;
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
 
         r->request_body_in_single_buf = 1;
@@ -357,16 +358,46 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
         assert(rc == 0);
 
         rc = ngx_http_discard_request_body(r);
+
+        ngx_chain_t out;
+        ngx_buf_t *b;
+
+        // reply in control connection
+        r->keepalive = 1;
+        r->headers_out.content_type.len = sizeof("text/plain") - 1;
+        r->headers_out.content_type.data = (u_char *) "text/plain";
+        r->headers_out.status = NGX_HTTP_OK;
+        r->headers_out.content_length_n = strlen("DONEDONE");
+
+        b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+
+        rc = ngx_http_send_header(r);
+        if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
+            ngx_log_debug(NGX_LOG_DEBUG_EVENT, r->connection->log, ngx_errno, "control conn send header fail");
+            ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return NGX_ERROR;
+        }
+
+        out.buf = b;
+        out.next = NULL;
+
+        b->pos = (u_char*)"DONEDONE";
+        b->last = b->pos + strlen("DONEDONE");
+        b->memory = 1;
+        b->last_buf = 1;
+
+        rc = ngx_http_output_filter(r, &out);
+        assert(rc == NGX_OK);
         ngx_http_finalize_request(r, NGX_OK);
         ngx_close_connection(r->connection);
 
         return NGX_OK;
     }
 
-    //if (handoff_in_ctx->req_counter > 100) {
-    //    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
-    //    return ngx_http_handoff_out_handler(r);
-    //}
+    if (handoff_in_ctx->req_counter > 18) {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
+        return ngx_http_handoff_out_handler(r);
+    }
 
     return xo_handle_http_request(r);
 }

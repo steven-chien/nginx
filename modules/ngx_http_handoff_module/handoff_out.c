@@ -20,22 +20,28 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
     rc = c->recv(c, c->recv_buffer, ev->available);
     if (rc == NGX_EAGAIN) {
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock read event fd=%d socket not ready", c->fd);
-        rc = ngx_add_event(ev, NGX_READ_EVENT, NGX_LEVEL_EVENT); 
-        assert(rc == 0);
+        //rc = ngx_add_event(ev, NGX_READ_EVENT, NGX_LEVEL_EVENT); 
+        //assert(rc == 0);
     }
     else {
-        if (rc == NGX_ERROR || ev->pending_eof) {
+        if (rc == NGX_ERROR || ev->pending_eof || ev->eof) {
             ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock read event fd=%d error %s, exiting", c->fd, strerror(ngx_errno));
             rc = ngx_del_event(ev, NGX_READ_EVENT, NGX_CLEAR_EVENT); 
             ngx_close_connection(c);
             return;
         }
 
-        // block socket until send
-        ngx_blocking(c->fd);
+        // look for done done
+        char *ptr0 = strstr((char*)c->recv_buffer, "DONEDONE");
+        if (ptr0) {
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ev->log, 0, "backend acknowledged");
+            // backend acknowledged, close this connection
+            //rc = ngx_del_event(ev, NGX_READ_EVENT, NGX_CLEAR_EVENT); 
+            ngx_close_connection(c);
+            return;
+        }
 
         ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock read event fd=%d received=%d: %s", c->fd, rc, c->recv_buffer);
-        rc = ngx_del_event(ev, NGX_READ_EVENT, NGX_CLEAR_EVENT); 
 
         // apply redirection
         struct handoff_out *handoff_out_ctx = c->handoff_out_ctx;
@@ -84,16 +90,20 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
             assert(rc == 0);
         }
 
+        //if (handoff_out_ctx->client->from_migrate == -1) {
+        //    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ev->log, 0, "HANDOFF_OUT Received migration respond for HANDOFF_BACK or RESET, exit directly");
+        //    ngx_close_connection(c);
+        //    return;
+        //}
+
         size_t header_len = snprintf(NULL, 0, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nContent-Length: 5\r\nAccept: */*\r\n\r\nDONE");
         c->send_buffer_len = header_len + 1;
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, ev->log, 0, "reply fake server redirection ready!");
         c->send_buffer = calloc(c->send_buffer_len, sizeof(uint8_t));
         snprintf((char*)c->send_buffer, c->send_buffer_len, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nContent-Length: 5\r\nAccept: */*\r\n\r\nDONE");
 
-        rc = c->send(c, c->send_buffer, c->send_buffer_len);
-        assert(rc == c->send_buffer_len);
-        ngx_nonblocking(c->fd);
-        free(c->send_buffer);
+        rc = ngx_add_event(c->write, NGX_WRITE_EVENT, NGX_LEVEL_EVENT); 
+        assert(rc == NGX_OK);
     }
 }
 

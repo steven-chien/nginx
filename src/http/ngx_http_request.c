@@ -514,7 +514,7 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 
 #endif
 
-    c->log->action = "reading client request line";
+    c->log->action = "reading client request line in wait handler";
 
     ngx_reusable_connection(c, 0);
 
@@ -3467,7 +3467,7 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
     b->last += n;
 
     c->log->handler = ngx_http_log_error;
-    c->log->action = "reading client request line";
+    c->log->action = "reading client request line in keepalive handler";
 
     c->idle = 0;
     ngx_reusable_connection(c, 0);
