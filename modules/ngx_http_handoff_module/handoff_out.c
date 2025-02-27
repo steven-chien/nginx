@@ -8,10 +8,6 @@
 #include "connect.h"
 #include "util.h"
 
-static int my_random(int min, int max){
-   return min + rand() / (RAND_MAX / (max - min + 1) + 1);
-}
-
 static void handoff_out_read_handler(ngx_event_t *ev) {
     int rc = -1;
     ngx_connection_t *c = ev->data;
@@ -188,14 +184,14 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
         struct sockaddr_in *sockaddr_to_connect;
         if (handoff_in_ctx == NULL || handoff_in_ctx->client_for_originaldone == NULL) {
             // fresh connection - init handoff
-printf("to handoff...");
+printf("to handoff...\n");
             client->from_migrate = -1;
             client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
             client->fd = r->connection->fd;
             sockaddr_to_connect = &handoff_out_ctx->ngx_conf->peer_sockaddr[client->to_migrate];
         }
         else {
-printf("to handoff back...");
+printf("to handoff back...\n");
             // migrated connection - handoff back
             client->from_migrate = 1;
             client->to_migrate = -1;

@@ -23,6 +23,7 @@
 #include <inttypes.h>
 
 #include "handoff.h"
+#include "util.h"
 
 //#include "object_store.h"
 #include "http_client.h"
@@ -240,43 +241,44 @@ void handoff_out_serialize_reset(struct http_client *client, ngx_log_t *log)
 	client->fd = -client->fd;
 }
 
-//// **special serialize for re-handoff**
-//static void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info)
-//{
-//	int ret = 0;
-//
-//	// apply blocking
-//	ret = apply_redirection_ebpf(migration_info->peer_addr, get_my_osd_addr().sin_addr.s_addr,
-//			migration_info->peer_port, htons(ntohs(migration_info->self_port) - get_my_osd_id() - 1),
-//			migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac, get_my_osd_addr().sin_addr.s_addr, my_mac,
-//			migration_info->peer_port, migration_info->self_port, true);
-//	assert(ret == 0);
-//	//zlog_debug(zlog_handoff, "Rehandoff: Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(migration_info->peer_port), ntohs(migration_info->self_port) - get_my_osd_id() - 1, 0);
-//
-//	// we set fd as 0 so it will not considered as reset handoff
-//	struct http_client *client = create_http_client(-1, 0);
-//	client->to_migrate = migration_info->acting_primary_osd_id;
-//	client->acting_primary_osd_id = migration_info->acting_primary_osd_id;
-//	client->client_addr = migration_info->peer_addr;
-//	client->client_port = migration_info->peer_port;
-//
-//	SocketSerialize migration_info_handoff_again = *migration_info;
-//
-//	migration_info_handoff_again.msg_type = HANDOFF_REQUEST;
-//	migration_info_handoff_again.self_addr = get_my_osd_addr().sin_addr.s_addr;
-//
-//	int proto_len = socket_serialize__get_packed_size(&migration_info_handoff_again);
-//	uint32_t net_proto_len = htonl(proto_len);
-//	client->proto_buf = malloc(sizeof(net_proto_len) + proto_len);
-//	socket_serialize__pack(&migration_info_handoff_again, client->proto_buf + sizeof(net_proto_len));
-//	// add length of proto_buf at the begin
-//	memcpy(client->proto_buf, &net_proto_len, sizeof(net_proto_len));
-//	client->proto_buf_sent = 0;
-//	client->proto_buf_len = sizeof(net_proto_len) + proto_len;
-//
-//	*client_to_handoff_again = client;
-//}
-//
+// **special serialize for re-handoff**
+void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate)
+{
+	int ret = 0;
+
+	// apply blocking
+	ret = apply_redirection_ebpf(migration_info->peer_addr, my_sockaddr->sin_addr.s_addr,
+			migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1),
+			migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac, my_sockaddr->sin_addr.s_addr, my_mac,
+			migration_info->peer_port, migration_info->self_port, true);
+	assert(ret == 0);
+	//zlog_debug(zlog_handoff, "Rehandoff: Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(migration_info->peer_port), ntohs(migration_info->self_port) - get_my_osd_id() - 1, 0);
+
+	// we set fd as 0 so it will not considered as reset handoff
+	struct http_client *client = create_http_client(-1, 0);
+	client->to_migrate = -1;
+	client->to_migrate = to_migrate;
+	client->acting_primary_osd_id = client->to_migrate;
+	client->client_addr = migration_info->peer_addr;
+	client->client_port = migration_info->peer_port;
+
+	SocketSerialize migration_info_handoff_again = *migration_info;
+
+	migration_info_handoff_again.msg_type = HANDOFF_REQUEST;
+	migration_info_handoff_again.self_addr = my_sockaddr->sin_addr.s_addr;
+
+	int proto_len = socket_serialize__get_packed_size(&migration_info_handoff_again);
+	uint32_t net_proto_len = htonl(proto_len);
+	client->proto_buf = malloc(sizeof(net_proto_len) + proto_len);
+	socket_serialize__pack(&migration_info_handoff_again, client->proto_buf + sizeof(net_proto_len));
+	// add length of proto_buf at the begin
+	memcpy(client->proto_buf, &net_proto_len, sizeof(net_proto_len));
+	client->proto_buf_sent = 0;
+	client->proto_buf_len = sizeof(net_proto_len) + proto_len;
+
+	*client_to_handoff_again = client;
+}
+
 void handoff_out_serialize(struct http_client *client, ngx_log_t *log)
 {
 	int ret = -1;

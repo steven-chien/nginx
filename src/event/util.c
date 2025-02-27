@@ -11,6 +11,10 @@
 
 #include "util.h"
 
+int my_random(int min, int max){
+   return min + rand() / (RAND_MAX / (max - min + 1) + 1);
+}
+
 void print_mac_address(unsigned char *mac) {
 	printf("%02x:%02x:%02x:%02x:%02x:%02x\n", 
 		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
