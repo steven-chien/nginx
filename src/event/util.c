@@ -24,7 +24,8 @@ void get_cpu_usage(double *idle, double *total) {
     fclose(fp);
 
     *idle = idle_time;
-    *total = user + nice + system + idle_time + iowait + irq + softirq;
+    //*total = user + nice + system + idle_time + iowait + irq + softirq;
+    *total = user + nice + system + iowait + irq + softirq;
 }
 
 int my_random(int min, int max){

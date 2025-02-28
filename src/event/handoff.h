@@ -38,8 +38,10 @@ extern bool tc_hybrid;
 #define Q_SIZE 1000
 extern rule_queue_t *q;
 
-
 #define MAX_PEERS 4
+
+#define FILEPATH "/tmp/mmapped.bin"
+#define FILESIZE (MAX_PEERS * sizeof(double))
 
 typedef struct {
     char ifname[64];
@@ -49,6 +51,8 @@ typedef struct {
     int my_id;
     struct sockaddr_in peer_sockaddr[MAX_PEERS];
     int num_peers;
+
+    double *cpu_usage_map;
 } ngx_http_handoff_main_conf_t;
 
 

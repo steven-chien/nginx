@@ -108,6 +108,22 @@ static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    int fd;
+    if (my_conf->my_id == -1) {
+        // i am frontend, create the mapped file. Front end must start before backends
+        fd = open(FILEPATH, O_RDWR | O_CREAT | O_TRUNC, (mode_t)0600);
+        assert(fd != -1);
+        int result = lseek(fd, FILESIZE-1, SEEK_SET);
+        assert(result != -1);
+        result = write(fd, "", 1);
+        assert(result != -1);
+        close(fd);
+    }
+
+    fd = open(FILEPATH, O_RDWR | O_CREAT | O_TRUNC, (mode_t)0600);
+    my_conf->cpu_usage_map = mmap(0, FILESIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    assert(my_conf->cpu_usage_map != MAP_FAILED);
+
     return NGX_CONF_OK;
 }
 
@@ -183,6 +199,7 @@ static void *ngx_http_handoff_create_main_conf(ngx_conf_t *cf)
         return NULL;
     }
     my_conf->num_peers = 0;
+    my_conf->my_id = -1;
 
     return my_conf;
 }
