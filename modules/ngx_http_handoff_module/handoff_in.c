@@ -70,10 +70,13 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
         handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
         printf("HANDOFF_REQUEST\n");
     }
-    else {
-        handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
+    else if (migration_info->msg_type == HANDOFF_RESET_REQUEST) {
         printf("HANDOFF_RESET\n");
         goto reply_handoff;
+    }
+    else {
+        printf("HANDOFF_TYPE unknown!!!!!!!!!\n");
+        exit(1);
     }
 
     restored_conn = ngx_get_connection(handoff_in_ctx->client_for_originaldone->fd, c->log);
@@ -348,9 +351,10 @@ printf("receive incoming handoff\n");
         return NGX_OK;
     }
     else if (handoff_in_ctx != NULL && handoff_in_ctx->wait_for_originaldone) {
-        if (handoff_in_ctx->client_for_originaldone) {
+        if (handoff_in_ctx->client_for_originaldone && handoff_in_ctx->restored_conn) {
             // income handoff case, reply first OK to client, before finalize control connection
             ngx_connection_t *restored_conn = handoff_in_ctx->restored_conn;
+            if (!restored_conn->handoff_in_ctx) return NGX_ERROR;
 
             handoff_in_ctx->wait_for_originaldone = false;
             if (handoff_in_ctx->client_for_originaldone == NULL) {

@@ -133,30 +133,29 @@ void handoff_out_connect_handler(ngx_event_t *ev) {
     c->read->handler  = handoff_out_read_handler;
     c->write->handler = handoff_out_write_handler;
 
-    if (!c->handoff_out_ctx->is_fd_connected) {
-        // init handoff out
-        c->handoff_out_ctx->is_fd_connected = true;
-        c->handoff_out_ctx->is_fd_in_epoll = false;
-        c->handoff_out_ctx->fd = c->fd;
+    //if (!c->handoff_out_ctx->is_fd_connected) {
+    // init handoff out
+    c->handoff_out_ctx->is_fd_connected = true;
+    c->handoff_out_ctx->is_fd_in_epoll = false;
+    c->handoff_out_ctx->fd = c->fd;
 
-        // send HTTP req to upstream
-        size_t header_len = snprintf(NULL, 0, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nAccept: */*\r\nContent-length: %d\r\n\r\n", c->handoff_out_ctx->client->proto_buf_len);
-        c->send_buffer_len = header_len + c->handoff_out_ctx->client->proto_buf_len;
-ngx_log_debug3(NGX_LOG_DEBUG_HTTP,c->log, 0, "header length=%d protbuf len=%d total len=%d", header_len, c->handoff_out_ctx->client->proto_buf_len, c->send_buffer_len);
-        c->send_buffer = calloc(c->send_buffer_len, sizeof(uint8_t));
+    // send HTTP req to upstream
+    size_t header_len = snprintf(NULL, 0, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nAccept: */*\r\nContent-length: %d\r\n\r\n", c->handoff_out_ctx->client->proto_buf_len);
+    c->send_buffer_len = header_len + c->handoff_out_ctx->client->proto_buf_len;
+    ngx_log_debug3(NGX_LOG_DEBUG_HTTP,c->log, 0, "header length=%d protbuf len=%d total len=%d", header_len, c->handoff_out_ctx->client->proto_buf_len, c->send_buffer_len);
+    c->send_buffer = calloc(c->send_buffer_len, sizeof(uint8_t));
 
-        snprintf((char*)c->send_buffer, c->send_buffer_len, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nAccept: */*\r\nContent-length: %d\r\n\r\n", c->handoff_out_ctx->client->proto_buf_len);
-        memcpy(&c->send_buffer[header_len], c->handoff_out_ctx->client->proto_buf, c->handoff_out_ctx->client->proto_buf_len);
+    snprintf((char*)c->send_buffer, c->send_buffer_len, "PUT / HTTP/1.1\r\nHost: n12-cx4:79\r\nAccept: */*\r\nContent-length: %d\r\n\r\n", c->handoff_out_ctx->client->proto_buf_len);
+    memcpy(&c->send_buffer[header_len], c->handoff_out_ctx->client->proto_buf, c->handoff_out_ctx->client->proto_buf_len);
 
-        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, " protobuf %s", &c->send_buffer[header_len]+sizeof(uint32_t));
+    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, " protobuf %s", &c->send_buffer[header_len]+sizeof(uint32_t));
 
-        c->recv_buffer_len = 8192 * sizeof(uint8_t);
-        c->read->available = c->recv_buffer_len;
-        c->recv_buffer = malloc(c->read->available);
+    c->recv_buffer_len = 8192 * sizeof(uint8_t);
+    c->read->available = c->recv_buffer_len;
+    c->recv_buffer = malloc(c->read->available);
 
-        rc = ngx_add_event(ev, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
-        assert(rc == 0);
-    }
+    rc = ngx_add_event(ev, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
+    assert(rc == 0);
 }
 
 ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
