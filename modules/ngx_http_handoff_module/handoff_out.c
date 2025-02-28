@@ -199,7 +199,7 @@ printf("to handoff back...\n");
         }
 
         handoff_out_ctx->client = client;
-        handoff_out_serialize(handoff_out_ctx->client, r->connection->log);
+        handoff_out_serialize(handoff_out_ctx->client, r->connection->log, my_conf);
         rc = connect_to_upstream(sockaddr_to_connect, handoff_out_ctx, r->connection->listening->pool_size, handoff_out_connect_handler, r->connection->log, &upstream_conn);
         if (rc != NGX_OK && rc != NGX_AGAIN) {
             ngx_log_error(NGX_LOG_ALERT, r->connection->log, ngx_errno, " connect to upstream fail");

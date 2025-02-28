@@ -11,6 +11,22 @@
 
 #include "util.h"
 
+void get_cpu_usage(double *idle, double *total) {
+    FILE *fp;
+    long user, nice, system, idle_time, iowait, irq, softirq;
+    fp = fopen("/proc/stat", "r");
+    if (fp == NULL) {
+        perror("Failed to open /proc/stat");
+        exit(EXIT_FAILURE);
+    }
+
+    fscanf(fp, "cpu %ld %ld %ld %ld %ld %ld %ld", &user, &nice, &system, &idle_time, &iowait, &irq, &softirq);
+    fclose(fp);
+
+    *idle = idle_time;
+    *total = user + nice + system + idle_time + iowait + irq + softirq;
+}
+
 int my_random(int min, int max){
    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }

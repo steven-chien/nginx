@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <netinet/in.h>
 
+void get_cpu_usage(double *idle, double *total);
 int my_random(int min, int max);
 void print_mac_address(unsigned char *mac);
 int get_mac_address(const char *ifname, struct sockaddr_in addr, uint8_t *mac);

@@ -94,11 +94,19 @@ static char *ngx_http_handoff_out(ngx_conf_t *cf, ngx_command_t *cmd, void *conf
 }
 
 static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    ngx_http_handoff_main_conf_t *my_conf = ngx_http_conf_get_module_main_conf(cf, ngx_http_handoff_module);
     ngx_http_core_loc_conf_t *clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     clcf->handler = ngx_http_handoff_in_handler;
 
     eight_MB = malloc(sizeof(uint8_t) * 1024 * 1024 * 8);
     memset(eight_MB, 1, sizeof(uint8_t) * 1024 * 1024 * 8);
+
+    for (int i = 0; i < my_conf->num_peers; i++) {
+        if (my_conf->peer_sockaddr[i].sin_addr.s_addr == my_conf->my_sockaddr.sin_addr.s_addr) {
+            my_conf->my_id = i;
+            printf("MY ID IS %d\n", i);
+        }
+    }
 
     return NGX_CONF_OK;
 }

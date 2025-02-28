@@ -61,13 +61,13 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
 
     if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
         int to_migrate = my_random(1, my_conf->num_peers) - 1;
-        handoff_out_serialize_rehandoff(&handoff_in_ctx->client_to_handoff_again, migration_info, &my_conf->my_sockaddr, to_migrate);
+        handoff_out_serialize_rehandoff(&handoff_in_ctx->client_to_handoff_again, migration_info, &my_conf->my_sockaddr, to_migrate, my_conf);
         handoff_in_ctx->client_for_originaldone = NULL;
         printf("HANDOFF_BACK_RQUEST: rehandoff to %d\n", to_migrate);
         goto reply_handoff;
     }
     else if (migration_info->msg_type == HANDOFF_REQUEST) {
-        handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
+        handoff_in_deserialize(handoff_in_ctx, migration_info, c->log, my_conf);
         printf("HANDOFF_REQUEST\n");
     }
     else if (migration_info->msg_type == HANDOFF_RESET_REQUEST) {
@@ -250,7 +250,6 @@ printf("restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_s
         return;
     }
 
-printf("finalizing request\n");
      ngx_http_finalize_request(r, NGX_OK);
 }
 
@@ -352,7 +351,7 @@ printf("receive incoming handoff\n");
     }
     else if (handoff_in_ctx != NULL && handoff_in_ctx->wait_for_originaldone) {
         if (handoff_in_ctx->client_for_originaldone && handoff_in_ctx->restored_conn) {
-            // income handoff case, reply first OK to client, before finalize control connection
+            // handof in progress, reply first OK to client, before finalize control connection
             ngx_connection_t *restored_conn = handoff_in_ctx->restored_conn;
             if (!restored_conn->handoff_in_ctx) return NGX_ERROR;
 
@@ -452,7 +451,7 @@ printf("connecting to upstream to handoff again\n");
         return NGX_OK;
     }
 
-    if (handoff_in_ctx->req_counter > 18) {
+    if (handoff_in_ctx->req_counter > 2) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
         return ngx_http_handoff_out_handler(r);
     }

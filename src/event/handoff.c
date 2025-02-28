@@ -242,7 +242,7 @@ void handoff_out_serialize_reset(struct http_client *client, ngx_log_t *log)
 }
 
 // **special serialize for re-handoff**
-void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate)
+void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate, ngx_http_handoff_main_conf_t *my_conf)
 {
 	int ret = 0;
 
@@ -279,7 +279,7 @@ void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_agai
 	*client_to_handoff_again = client;
 }
 
-void handoff_out_serialize(struct http_client *client, ngx_log_t *log)
+void handoff_out_serialize(struct http_client *client, ngx_log_t *log, ngx_http_handoff_main_conf_t *my_conf)
 {
 	int ret = -1;
 	int fd = client->fd;
@@ -1098,7 +1098,7 @@ static int restore_queue_send(int fd, char *buf, int outq_len, int unsq_len)
 	return 0;
 }
 
-void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info, ngx_log_t *log)
+void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info, ngx_log_t *log, ngx_http_handoff_main_conf_t *my_conf)
 {
 	int ret = -1;
 

@@ -46,6 +46,7 @@ typedef struct {
     struct sockaddr_in my_sockaddr;
     uint8_t my_mac[6];
 
+    int my_id;
     struct sockaddr_in peer_sockaddr[MAX_PEERS];
     int num_peers;
 } ngx_http_handoff_main_conf_t;
@@ -113,7 +114,7 @@ struct handoff_out {
 };
 
 void handoff_out_serialize_reset(struct http_client *client, ngx_log_t *log);
-void handoff_out_serialize(struct http_client *client, ngx_log_t *log);
+void handoff_out_serialize(struct http_client *client, ngx_log_t *log, ngx_http_handoff_main_conf_t *my_conf);
 
 //void handoff_out_connect(struct handoff_out *out_ctx);
 //int handoff_out_reconnect(struct handoff_out *out_ctx);
@@ -131,7 +132,7 @@ void handoff_out_serialize(struct http_client *client, ngx_log_t *log);
 //
 //void handoff_in_disconnect(struct handoff_in *in_ctx);
 #include "socket_serialize.pb-c.h"
-void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info, ngx_log_t *log);
-void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate);
+void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info, ngx_log_t *log, ngx_http_handoff_main_conf_t *my_conf);
+void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate, ngx_http_handoff_main_conf_t *my_conf);
 
 #endif
