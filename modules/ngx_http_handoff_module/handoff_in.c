@@ -452,6 +452,13 @@ printf("connecting to upstream to handoff again\n");
         return NGX_OK;
     }
 
+    ngx_http_handoff_main_conf_t *my_conf = r->connection->handoff_in_ctx->ngx_conf;
+    //redisReply *reply = redisCommand(my_conf->redis_ctx, "GET %d", my_conf->my_id);
+    //assert(reply != NULL);
+    //printf("my load: %d\n", atoi(reply->str));
+    //freeReplyObject(reply);
+    printf("my load: %d\n", my_conf->shmaddr[0]);
+
     if (handoff_in_ctx->req_counter > 18) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
         return ngx_http_handoff_out_handler(r);

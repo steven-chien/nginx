@@ -8,6 +8,7 @@
 #include "ebpf_forward.h"
 
 #include "http_client.h"
+#include <hiredis/hiredis.h>
 
 #ifndef TCPOPT_MSS
 #define TCPOPT_MSS 2
@@ -48,6 +49,9 @@ typedef struct {
 
     struct sockaddr_in peer_sockaddr[MAX_PEERS];
     int num_peers;
+    int my_id;
+    redisContext *redis_ctx;
+    int *shmaddr;
 } ngx_http_handoff_main_conf_t;
 
 
