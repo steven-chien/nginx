@@ -3420,49 +3420,53 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
     if (n == 0) {
         ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
                       "client %V closed keepalive connection", &c->addr_text);
-        //// reset if connection is handed off
-        //if (c->handoff_in_ctx && c->handoff_in_ctx->client_for_originaldone && ntohs(((struct sockaddr_in*)c->sockaddr)->sin_port) > 79) {
-        //    ngx_connection_t *upstream_conn;
-        //    int rc = -1;
-
-        //    ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
-        //                  "client %V needs to be handed back off to front end", &c->addr_text);
-
-        //    struct handoff_out *handoff_out_ctx = ngx_pcalloc(c->pool, sizeof(struct handoff_out));
-        //    handoff_out_ctx->ngx_conf = c->handoff_in_ctx->ngx_conf;
-        //    struct http_client *client = create_http_client(0, c->fd);
-
-        //    struct sockaddr_in* addr = (struct sockaddr_in*)c->sockaddr;
-        //    rc = get_mac_address(c->handoff_in_ctx->ngx_conf->ifname, *addr, client->client_mac);
-        //    assert(rc == 0);
-
-        //    client->client_addr = addr->sin_addr.s_addr;
-        //    client->client_port = addr->sin_port;
-        //    printf("client needs to be handed back off to front end (%d)\n", ntohs(addr->sin_port));
-        //    //strncpy(client->uri_str, (char*)r->uri.data, r->uri.len);
-        //    //client->uri_str[r->uri.len] = '\0';
-        //    //client->uri_str_len = r->uri.len;
-
-        //    // migrated connection - handoff back
-        //    client->from_migrate = 1;
-        //    client->to_migrate = -1;
-        //    client->fd = c->fd;
-
-        //    handoff_out_ctx->client = client;
-        //    handoff_out_serialize_reset(handoff_out_ctx->client, c->log);
-        //    rc = connect_to_upstream(&c->handoff_in_ctx->frontend_sockaddr, handoff_out_ctx, c->listening->pool_size, handoff_out_connect_handler, c->log, &upstream_conn);
-        //    if (rc != NGX_OK && rc != NGX_AGAIN) {
-        //        ngx_log_error(NGX_LOG_ALERT, c->log, ngx_errno, " connect to upstream fail");
-        //        return;
-        //    }
-
-        //    // handoff_out_ctx is mem copied into upstream_conn, can free
-        //    ngx_pfree(c->pool, handoff_out_ctx);
-        //}
-        //else {
+//        // reset if connection is handed off
+//        if (c->handoff_in_ctx && c->handoff_in_ctx->client_for_originaldone && ntohs(((struct sockaddr_in*)c->sockaddr)->sin_port) > 79) {
+//printf("connection is handed off FROM remote, ignore\n");
+//        }
+//        else if (c->handoff_out_ctx && ntohs(((struct sockaddr_in*)c->sockaddr)->sin_port) > 79) {
+//printf("connection is handed off TO remote, ignore\n");
+//            ngx_connection_t *upstream_conn;
+//            int rc = -1;
+//
+//            ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
+//                          "client %V needs to be handed back off to front end", &c->addr_text);
+//
+//            struct handoff_out *handoff_out_ctx = ngx_pcalloc(c->pool, sizeof(struct handoff_out));
+//            handoff_out_ctx->ngx_conf = c->handoff_in_ctx->ngx_conf;
+//            struct http_client *client = create_http_client(0, c->fd);
+//
+//            struct sockaddr_in* addr = (struct sockaddr_in*)c->sockaddr;
+//            rc = get_mac_address(c->handoff_in_ctx->ngx_conf->ifname, *addr, client->client_mac);
+//            assert(rc == 0);
+//
+//            client->client_addr = addr->sin_addr.s_addr;
+//            client->client_port = addr->sin_port;
+//            printf("client needs to be handed back off to front end (%d)\n", ntohs(addr->sin_port));
+//            //strncpy(client->uri_str, (char*)r->uri.data, r->uri.len);
+//            //client->uri_str[r->uri.len] = '\0';
+//            //client->uri_str_len = r->uri.len;
+//
+//            // migrated connection - handoff back
+//            client->from_migrate = 1;
+//            client->to_migrate = -1;
+//            client->fd = c->fd;
+//
+//            handoff_out_ctx->client = client;
+//            handoff_out_serialize_reset(handoff_out_ctx->client, c->log);
+//            rc = connect_to_upstream(&c->handoff_in_ctx->frontend_sockaddr, handoff_out_ctx, c->listening->pool_size, handoff_out_connect_handler, c->log, &upstream_conn);
+//            if (rc != NGX_OK && rc != NGX_AGAIN) {
+//                ngx_log_error(NGX_LOG_ALERT, c->log, ngx_errno, " connect to upstream fail");
+//                return;
+//            }
+//
+//            // handoff_out_ctx is mem copied into upstream_conn, can free
+//            ngx_pfree(c->pool, handoff_out_ctx);
+//        }
+//        else {
             ngx_http_close_connection(c);
             return;
-        //}
+//        }
     }
 
     b->last += n;
@@ -3888,7 +3892,9 @@ ngx_http_close_connection(ngx_connection_t *c)
 
     pool = c->pool;
 
+ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_http_close_connection fd=%d...\n", c->fd);
     ngx_close_connection(c);
+
 
     ngx_destroy_pool(pool);
 }

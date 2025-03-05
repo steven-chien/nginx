@@ -33,7 +33,7 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
         return NGX_ERROR;
     }
 
-    ngx_reusable_connection(upstream_conn, 1);
+    ngx_reusable_connection(upstream_conn, 0);
     *conn = upstream_conn;
     upstream_conn->type = type;
     //upstream_conn->data = r;
@@ -41,12 +41,14 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
     upstream_conn->pool = ngx_create_pool(pool_size, log);
     assert(upstream_conn->pool != NULL);
 
-    upstream_conn->log = ngx_pcalloc(upstream_conn->pool, sizeof(ngx_log_t));
+    //upstream_conn->log = ngx_pcalloc(upstream_conn->pool, sizeof(ngx_log_t));
+    upstream_conn->log = calloc(1, sizeof(ngx_log_t));
     *(upstream_conn->log) = *log;
     upstream_conn->pool->log = upstream_conn->log;
 
     // ownership of this handoff_out_ctx should be the control conn to upstream
-    upstream_conn->handoff_out_ctx = ngx_pcalloc(upstream_conn->pool, sizeof(struct handoff_out));
+    //upstream_conn->handoff_out_ctx = ngx_pcalloc(upstream_conn->pool, sizeof(struct handoff_out));
+    upstream_conn->handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
     memcpy(upstream_conn->handoff_out_ctx, handoff_out_ctx, sizeof(struct handoff_out));
     memcpy(upstream_conn->handoff_out_ctx->client, handoff_out_ctx->client, sizeof(struct http_client));
 
@@ -69,8 +71,10 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
     upstream_conn->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
     upstream_conn->start_time = ngx_current_msec;
 
-    rev = ngx_calloc(sizeof(ngx_event_t), upstream_conn->log);
-    wev = ngx_calloc(sizeof(ngx_event_t), upstream_conn->log);
+    //rev = ngx_calloc(sizeof(ngx_event_t), upstream_conn->log);
+    //wev = ngx_calloc(sizeof(ngx_event_t), upstream_conn->log);
+    rev = upstream_conn->read;
+    wev = upstream_conn->write;
 
     rev->handler = connect_handler;
     wev->handler = connect_handler;
@@ -98,8 +102,8 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
         rc = ngx_add_conn(upstream_conn);
         assert(rc != NGX_ERROR);
     }
-    ngx_log_debug4(NGX_LOG_DEBUG_EVENT, log, 0,
-                   "connect to upstream peer %d (%s:%d), fd:%d #%uA", upstream_conn->handoff_out_ctx->client->to_migrate, inet_ntoa(sockaddr->sin_addr), ntohs(sockaddr->sin_port), upstream_conn->number);
+    //ngx_log_debug4(NGX_LOG_DEBUG_EVENT, log, 0,
+    //               "connect to upstream peer %d (%s:%d), fd:%d #%uA", upstream_conn->handoff_out_ctx->client->to_migrate, inet_ntoa(sockaddr->sin_addr), ntohs(sockaddr->sin_port), upstream_conn->number);
 
     rc = connect(s, (struct sockaddr*)sockaddr, sizeof(struct sockaddr));
     if (rc == -1 && ngx_socket_errno != NGX_EINPROGRESS) {
@@ -141,6 +145,8 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, upstream_conn->log, 0, "connected");
 
     wev->ready = 1;
+//    ngx_http_request_t *original_r = (ngx_http_request_t*)handoff_out_ctx->req_to_free;
+//    ngx_http_finalize_request(original_r, NGX_ERROR);
 
     return NGX_OK;
 }

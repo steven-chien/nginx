@@ -102,8 +102,9 @@ static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     clcf->handler = ngx_http_handoff_in_handler;
 
     // payload buffer
-    eight_MB = malloc(sizeof(uint8_t) * 1024 * 1024 * 8);
+    eight_MB = ngx_pcalloc(cf->pool, sizeof(uint8_t) * 1024 * 1024 * 8);
     memset(eight_MB, 1, sizeof(uint8_t) * 1024 * 1024 * 8);
+printf("doing malloc for eight_MB\n");
 
     // get my ID
     for (int i = 0; i < my_conf->num_peers; i++) {
@@ -124,18 +125,18 @@ static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    if (my_conf->my_id != -1) {
-        int shmid;
-        if ((shmid = shmget(1234, sizeof(int), 0666)) == -1) {
-            perror("shmget failed");
-            exit(1);
-        }
+    //if (my_conf->my_id != -1) {
+    //    int shmid;
+    //    if ((shmid = shmget(1234, sizeof(uint8_t), 0666)) == -1) {
+    //        perror("shmget failed");
+    //        exit(1);
+    //    }
 
-        if ((my_conf->shmaddr = shmat(shmid, NULL, 0)) == (void *) -1) {
-            perror("shmat failed");
-            exit(1);
-        }
-    }
+    //    if ((my_conf->shmaddr = shmat(shmid, NULL, 0)) == (void *) -1) {
+    //        perror("shmat failed");
+    //        exit(1);
+    //    }
+    //}
 
     return NGX_CONF_OK;
 }
@@ -208,6 +209,7 @@ static void *ngx_http_handoff_create_main_conf(ngx_conf_t *cf)
     ngx_http_handoff_main_conf_t  *my_conf;
 
     my_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_handoff_main_conf_t));
+    //my_conf = calloc(1, sizeof(ngx_http_handoff_main_conf_t));
     if (my_conf == NULL) {
         return NULL;
     }
