@@ -1233,27 +1233,6 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 
     wev->write = 1;
 
-    if (c->handoff_out_ctx) { 
-        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_out_ctx");
-        if (c->handoff_out_ctx->client) {
-            free(c->handoff_out_ctx->client);
-        }
-        ngx_pfree(c->pool, c->handoff_out_ctx);
-        c->handoff_out_ctx = NULL;
-    }
-    if (c->handoff_in_ctx) {
-        if (c->handoff_in_ctx->client_for_originaldone) {
-            free(c->handoff_in_ctx->client_for_originaldone);
-        }
-        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_in_ctx");
-        ngx_pfree(c->pool, c->handoff_in_ctx);
-        c->handoff_in_ctx = NULL;
-    }
-
-
-//    c->handoff_out_ctx = NULL;
-//    c->handoff_in_ctx = NULL;
-
     return c;
 }
 
@@ -1283,21 +1262,53 @@ ngx_close_connection(ngx_connection_t *c)
         return;
     }
 
-    if (c->handoff_out_ctx) { 
-        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_out_ctx");
-        if (c->handoff_out_ctx->client) {
-            free(c->handoff_out_ctx->client);
-        }
-        ngx_pfree(c->pool, c->handoff_out_ctx);
-        c->handoff_out_ctx = NULL;
+    if (c->send_buffer) {
+        free(c->send_buffer); c->send_buffer = NULL;
     }
+    if (c->recv_buffer) {
+        free(c->recv_buffer); c->recv_buffer = NULL;
+    }
+    if (c->handoff_out_ctx) { 
+        if (c->handoff_out_ctx->client) {
+            free_http_client(c->handoff_out_ctx->client);
+            c->handoff_out_ctx->client = NULL;
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_out_ctx->client in ngx_close_connection\n");
+        }
+        if (c->handoff_out_ctx->recv_protobuf) {
+            ngx_pfree(c->pool, c->handoff_out_ctx->recv_protobuf);
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_out_ctx->recv_protobuf in ngx_close_connection\n");
+            c->handoff_out_ctx->recv_protobuf = NULL;
+        }
+        //ngx_pfree(c->pool, c->handoff_out_ctx);
+        free(c->handoff_out_ctx);
+        c->handoff_out_ctx = NULL;
+        //ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_out_ctx in ngx_close_connection");
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_out_ctx in ngx_close_connection\n");
+    }
+
     if (c->handoff_in_ctx) {
-        //if (c->handoff_in_ctx->client_for_originaldone) {
-        //    free(c->handoff_in_ctx->client_for_originaldone);
-        //}
-        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_in_ctx");
-        ngx_pfree(c->pool, c->handoff_in_ctx);
+        if (c->handoff_in_ctx->client_to_handoff_again) {
+            free_http_client(c->handoff_in_ctx->client_to_handoff_again);
+            c->handoff_in_ctx->client_to_handoff_again = NULL;
+        }
+        if (c->handoff_in_ctx->client_for_originaldone) {
+            free_http_client(c->handoff_in_ctx->client_for_originaldone);
+            c->handoff_in_ctx->client_for_originaldone = NULL;
+        }
+        if (c->handoff_in_ctx->send_protobuf) {
+            free(c->handoff_in_ctx->send_protobuf);
+            c->handoff_in_ctx->send_protobuf = NULL;
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_in_ctx->send_protobuf in ngx_close_connection\n");
+        }
+        if (c->handoff_in_ctx->recv_protobuf) {
+            ngx_pfree(c->pool, c->handoff_in_ctx->recv_protobuf);
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_in_ctx->recv_protobuf in ngx_close_connection\n");
+        }
+        //ngx_pfree(c->pool, c->handoff_in_ctx);
+        free(c->handoff_in_ctx);
         c->handoff_in_ctx = NULL;
+        //ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_in_ctx in ngx_close_connection");
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_in_ctx in ngx_close_connection\n");
     }
 
     if (c->read->timer_set) {
@@ -1590,6 +1601,7 @@ ngx_tcp_nodelay(ngx_connection_t *c)
 
         ngx_connection_error(c, ngx_socket_errno,
                              "setsockopt(TCP_NODELAY) failed");
+                             printf("setsockopt(TCP_NODELAY) failed fd=%d\n", c->fd);
         return NGX_ERROR;
     }
 

@@ -20,7 +20,7 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     ngx_int_t     rc;
     ngx_chain_t  *in, out;
     struct handoff_in *handoff_in_ctx;
-    ngx_connection_t *c, *restored_conn;
+    ngx_connection_t *c, *restored_conn = NULL;
     ngx_http_handoff_main_conf_t *my_conf;
 
     c = r->connection;
@@ -59,36 +59,44 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     }
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "unpack protobuf successful");
 
+    // find out where the request came from
+    handoff_in_ctx->osd_arr_index = find_backend_id_by_address(((struct sockaddr_in*)c->sockaddr)->sin_addr.s_addr, my_conf->peer_sockaddr, my_conf->num_peers);
+
     if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
-        int to_migrate = my_random(1, my_conf->num_peers) - 1;
-        handoff_out_serialize_rehandoff(&handoff_in_ctx->client_to_handoff_again, migration_info, &my_conf->my_sockaddr, to_migrate);
-        handoff_in_ctx->client_for_originaldone = NULL;
-        printf("HANDOFF_BACK_RQUEST: rehandoff to %d\n", to_migrate);
+        //int to_migrate = my_random(1, my_conf->num_peers) - 1;
+        int to_migrate = (handoff_in_ctx->osd_arr_index + 1 + my_conf->num_peers) % my_conf->num_peers;
+        handoff_out_serialize_rehandoff(&handoff_in_ctx->client_to_handoff_again, migration_info, &my_conf->my_sockaddr, to_migrate, my_conf->my_id);
+//printf("HANDOFF_BACK_REQUEST: from %d: rehandoff to %d\n", handoff_in_ctx->osd_arr_index, to_migrate);
+        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "HANDOFF_BACK_RQUEST: rehandoff to %d\n", to_migrate);
         goto reply_handoff;
     }
     else if (migration_info->msg_type == HANDOFF_REQUEST) {
         handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
-        printf("HANDOFF_REQUEST\n");
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "HANDOFF_REQUEST\n");
+//printf("HANDOFF_REQUEST: from %d\n", handoff_in_ctx->osd_arr_index);
     }
     else if (migration_info->msg_type == HANDOFF_RESET_REQUEST) {
-        printf("HANDOFF_RESET\n");
+        handoff_in_ctx->osd_arr_index = find_backend_id_by_address(((struct sockaddr_in*)c->sockaddr)->sin_addr.s_addr, my_conf->peer_sockaddr, my_conf->num_peers);
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "HANDOFF_RESET\n");
+//printf("HANDOFF_RESET_REQUEST: from %d\n", handoff_in_ctx->osd_arr_index);
         goto reply_handoff;
     }
     else {
-        printf("HANDOFF_TYPE unknown!!!!!!!!!\n");
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "HANDOFF_TYPE unknown!!!!!!!!!\n");
         exit(1);
     }
 
     restored_conn = ngx_get_connection(handoff_in_ctx->client_for_originaldone->fd, c->log);
     assert(restored_conn != NULL);
 
-    ngx_reusable_connection(restored_conn, 1);
+    ngx_reusable_connection(restored_conn, 0);
 
     // create pool for connection
     restored_conn->pool = ngx_create_pool(c->listening->pool_size, c->log);
     assert(restored_conn->pool != NULL);
 
     struct sockaddr_in* restored_conn_addr = (struct sockaddr_in*)ngx_pcalloc(restored_conn->pool, sizeof(struct sockaddr_in));
+    //struct sockaddr_in* restored_conn_addr = (struct sockaddr_in*)calloc(1, sizeof(struct sockaddr_in));
     restored_conn->sockaddr = (struct sockaddr*)restored_conn_addr;
  
     restored_conn_addr->sin_addr.s_addr = handoff_in_ctx->client_for_originaldone->client_addr;
@@ -96,10 +104,12 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     restored_conn_addr->sin_family      = AF_INET;
 
     // mark this connection as handed off
-    restored_conn->handoff_in_ctx = ngx_pcalloc(restored_conn->pool, sizeof(struct handoff_in));
+    //restored_conn->handoff_in_ctx = ngx_pcalloc(restored_conn->pool, sizeof(struct handoff_in));
+    restored_conn->handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
     restored_conn->handoff_in_ctx->client_for_originaldone = NULL;
 
     ngx_log_t *log = ngx_pcalloc(restored_conn->pool, sizeof(ngx_log_t));
+    //ngx_log_t *log = calloc(1, sizeof(ngx_log_t));
     assert(restored_conn->log != NULL);
     *log = c->listening->log;
 
@@ -136,8 +146,8 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "aded restored socket to epoll loop");
     }
 
-    log->data = NULL;
-    log->handler = NULL;
+    //log->data = NULL;
+    //log->handler = NULL;
     c->listening->handler(restored_conn);
 
 reply_handoff:
@@ -154,15 +164,20 @@ reply_handoff:
                                     migration_info->self_addr, my_conf->my_mac, migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac,
                                     htons(ntohs(migration_info->self_port) - 1 - 1), migration_info->peer_port, false); // offst self port
         assert(rc == 0);
+ngx_log_debug4(NGX_LOG_DEBUG_EVENT, c->log, 0, "apply src ip modification (%u:%u , %lu:%u)\n", my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
+//printf("apply src ip modification (%u:%u , %lu:%u)\n", my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
     }
     //else if (migration_info->msg_type == HANDOFF_BACK_REQUEST || migration_info->msg_type == HANDOFF_RESET_REQUEST) {
     else if (migration_info->msg_type == HANDOFF_RESET_REQUEST) {
         ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0, "Handoff back / reset (%d,%d)", ntohs(migration_info->peer_port), ntohs(migration_info->self_port) - 1 - 1);
         memcpy(&handoff_in_ctx->frontend_sockaddr, &my_conf->my_sockaddr, sizeof(struct sockaddr_in));
         // remove redirection if this is handoff back
+        // TODO FIX THIS
         rc = remove_redirection_ebpf(migration_info->peer_addr, my_conf->my_sockaddr.sin_addr.s_addr,
                                      migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1));
         assert(rc == 0);
+ngx_log_debug4(NGX_LOG_DEBUG_EVENT, c->log, 0, "remove redir (%lu:%u , %u:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port) - 1 -1);
+//printf("remove redir (%lu:%u , %u:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port) - 1 -1);
     }
 
     // build response proto_buf
@@ -180,9 +195,6 @@ reply_handoff:
     migration_info_resp.self_port = migration_info->self_port;
     migration_info_resp.peer_port = migration_info->peer_port;
 
-    // no longer need
-    socket_serialize__free_unpacked(migration_info, NULL);
-
     int proto_len = socket_serialize__get_packed_size(&migration_info_resp);
     uint32_t net_proto_len = htonl(proto_len);
     //uint8_t *proto_buf = ngx_pcalloc(r->connection->pool, sizeof(net_proto_len) + proto_len);
@@ -199,12 +211,21 @@ reply_handoff:
     // subsequent requests will use the handoff_in_ctx in the upstream_conn, set to false
     if (migration_info->msg_type == HANDOFF_REQUEST) {
         memcpy(restored_conn->handoff_in_ctx, handoff_in_ctx, sizeof(struct handoff_in));
-printf("restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_sockaddr.sin_addr));
-        memcpy(restored_conn->handoff_in_ctx->client_for_originaldone, handoff_in_ctx->client_for_originaldone, sizeof(struct http_client));
+        if (handoff_in_ctx->send_protobuf) {
+            restored_conn->handoff_in_ctx->send_protobuf = malloc(handoff_in_ctx->send_protobuf_len);
+            memcpy(restored_conn->handoff_in_ctx->send_protobuf, handoff_in_ctx->send_protobuf, handoff_in_ctx->send_protobuf_len);
+        }
+ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_sockaddr.sin_addr));
+        restored_conn->handoff_in_ctx->client_for_originaldone = NULL;
+        //restored_conn->handoff_in_ctx->client_for_originaldone = calloc(1, sizeof(struct http_client));
+        //memcpy(restored_conn->handoff_in_ctx->client_for_originaldone, handoff_in_ctx->client_for_originaldone, sizeof(struct http_client));
     }
 
     // current request in needs to be retured immediately, special case
     handoff_in_ctx->wait_for_originaldone = true;
+
+    // no longer need
+    socket_serialize__free_unpacked(migration_info, NULL);
 
     // repond to orignal server
     rc = ngx_http_discard_request_body(r);
@@ -242,7 +263,7 @@ printf("restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_s
     b->last = b->pos + handoff_in_ctx->send_protobuf_len;
     b->memory = 1;
     b->last_buf = 1;
-    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, " resp protobuf %s", handoff_in_ctx->send_protobuf+sizeof(uint32_t));
+    //ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, " resp protobuf %s", handoff_in_ctx->send_protobuf+sizeof(uint32_t));
 
     rc = ngx_http_output_filter(r, &out);
     if (rc != NGX_OK) {
@@ -250,7 +271,6 @@ printf("restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_s
         return;
     }
 
-printf("finalizing request\n");
      ngx_http_finalize_request(r, NGX_OK);
 }
 
@@ -311,13 +331,14 @@ static void handoff_in_write_handler(ngx_event_t *ev) {
     sent = c->send(c, c->send_buffer + c->sent, c->send_buffer_len - c->sent);
     if (sent == NGX_EAGAIN || c->sent < c->send_buffer_len) {
         ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock write event fd=%d sent     %d/%ld", c->fd, c->sent, c->send_buffer_len);
-        rc = ngx_add_event(ev, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
-        assert(rc == 0);
+        //rc = ngx_add_event(ev, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
+        //assert(rc == 0);
     }
 
     if (c->sent >= c->send_buffer_len) {
-        free(c->send_buffer);
         c->sent = 0;
+        free(c->send_buffer);
+        c->send_buffer = NULL;
         c->send_buffer_len = 0;
         // restore nginx's http write handler pointer
         c->write->handler = c->handoff_in_ctx->original_write_handler;
@@ -328,14 +349,18 @@ static void handoff_in_write_handler(ngx_event_t *ev) {
 
 ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
     ngx_int_t rc;
+    ngx_log_t *listener_log;
+    size_t pool_size;
     struct handoff_in *handoff_in_ctx = r->connection->handoff_in_ctx;
+    ngx_reusable_connection(r->connection, 0);
 
     if (handoff_in_ctx == NULL) {
-        handoff_in_ctx = ngx_pcalloc(r->connection->pool, sizeof(struct handoff_in));
+        //handoff_in_ctx = ngx_pcalloc(r->connection->pool, sizeof(struct handoff_in));
+        handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
         handoff_in_ctx->ngx_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
-        handoff_in_ctx->req_counter = 0;
+        handoff_in_ctx->req_counter = 1;
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
-printf("receive incoming handoff\n");
+//printf("receive incoming handoff\n");
 
         r->request_body_in_single_buf = 1;
         r->keepalive = 1;
@@ -369,7 +394,6 @@ printf("receive incoming handoff\n");
                 payload_size = atoi(handoff_in_ctx->client_for_originaldone->uri_str + sizeof(char));
     
             size_t total_header_len = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
- 
             restored_conn->send_buffer = calloc((total_header_len + 1 + payload_size + 1), sizeof(uint8_t));
             restored_conn->send_buffer_len = total_header_len + payload_size;
             //memset(restored_conn->send_buffer, 1, total_header_len * sizeof(char) + 1 + payload_size + 1);
@@ -380,15 +404,38 @@ printf("receive incoming handoff\n");
             restored_conn->handoff_in_ctx->original_write_handler = restored_conn->write->handler;
             restored_conn->write->handler = handoff_in_write_handler;
             rc = ngx_add_event(restored_conn->write, NGX_WRITE_EVENT, NGX_LEVEL_EVENT);
-            assert(rc == 0);
+            //assert(rc == 0);
+            if(rc) {
+                printf("FAIL TO RESPOND TO ORIGINAL SERVER\n");
+                return NGX_ERROR;
+            }
         }
-        //else if (handoff_in_ctx->client_to_handoff_again) {
-        //    handoff_out_ctx = malloc(sizeof(struct handoff_out));
-        //}
-        //else {
-        //    printf("both client for originaldone and to handoff again are emtpy!!!!!\n");
-        //    exit(1);
-        //}
+        else if (handoff_in_ctx->client_to_handoff_again) {
+            // TODO We need to reply fake server to neutural. the remote state before init new handoff
+            // TODO we need to copy the handoff_in_ctx because it is associated with the control conn request which will be freed
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "preserve handoff_in_ctx before reply DONEDONE!!!!!\n");
+
+            struct handoff_in *tmp = handoff_in_ctx;
+            handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
+            memcpy(handoff_in_ctx, tmp, sizeof(struct handoff_in)),
+            //handoff_in_ctx->send_protobuf = NULL;
+            //tmp->send_protobuf = NULL;
+
+            handoff_in_ctx->client_to_handoff_again = create_http_client(-1, tmp->client_to_handoff_again->fd);
+            memcpy(handoff_in_ctx->client_to_handoff_again, tmp->client_to_handoff_again, sizeof(struct http_client));
+            handoff_in_ctx->client_to_handoff_again->put_buf = malloc(0);
+
+            if (tmp->client_to_handoff_again->proto_buf != NULL) {
+                handoff_in_ctx->client_to_handoff_again->proto_buf = malloc(tmp->client_to_handoff_again->proto_buf_len);
+                memcpy(handoff_in_ctx->client_to_handoff_again->proto_buf, tmp->client_to_handoff_again->proto_buf, tmp->client_to_handoff_again->proto_buf_len);
+            }
+
+            listener_log = &r->connection->listening->log;
+            pool_size = r->connection->listening->pool_size;
+        }
+        else {
+            printf("both client for originaldone and to handoff again are emtpy: must be a RESET. nothing to do\n");
+        }
 
         rc = ngx_http_discard_request_body(r);
 
@@ -422,44 +469,36 @@ printf("receive incoming handoff\n");
         rc = ngx_http_output_filter(r, &out);
         assert(rc == NGX_OK);
 
-printf("connecting to upstream to handoff again\n");
         if (handoff_in_ctx->client_to_handoff_again) {
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "connecting to upstream to handoff again\n");
             // rehandoff case, do it after control with fake server has closed. corner case: rehandoff to same server
-            //client->from_migrate = -1;
-            //client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
-            //client->fd = r->connection->fd;
             ngx_connection_t *upstream_conn;
-            struct handoff_out *handoff_out_ctx = ngx_palloc(r->connection->pool, sizeof(struct handoff_out));
+            //struct handoff_out *handoff_out_ctx = ngx_palloc(r->connection->pool, sizeof(struct handoff_out));
+            struct handoff_out *handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
             handoff_out_ctx->ngx_conf = handoff_in_ctx->ngx_conf;
- 
-            //struct sockaddr_in* addr = (struct sockaddr_in*)r->connection->sockaddr;
-            //rc = get_mac_address(my_conf->ifname, *addr, client->client_mac);
-            //assert(rc == 0);
  
             struct sockaddr_in *sockaddr_to_connect = &handoff_out_ctx->ngx_conf->peer_sockaddr[handoff_in_ctx->client_to_handoff_again->to_migrate];
 
             handoff_out_ctx->client = handoff_in_ctx->client_to_handoff_again;
-            rc = connect_to_upstream(sockaddr_to_connect, handoff_out_ctx, r->connection->listening->pool_size, handoff_out_connect_handler, r->connection->log, &upstream_conn);
+            rc = connect_to_upstream(sockaddr_to_connect, handoff_out_ctx, pool_size, handoff_out_connect_handler, listener_log, &upstream_conn);
             if (rc != NGX_OK && rc != NGX_AGAIN) {
                 ngx_log_error(NGX_LOG_ALERT, r->connection->log, ngx_errno, " connect to upstream fail");
                 return NGX_ERROR;
             }
-            ngx_pfree(r->connection->pool, handoff_out_ctx);
+            //ngx_pfree(r->connection->pool, handoff_out_ctx);
+            free(handoff_out_ctx);
+            free(handoff_in_ctx); // in case of rehandoff, this is a copy, the ptr inside the req connection will be freed by ngx_connection_close
         }
 
-        ngx_http_finalize_request(r, NGX_OK);
-        ngx_close_connection(r->connection);
+        //ngx_http_finalize_request(r, NGX_OK);
         return NGX_OK;
     }
 
     ngx_http_handoff_main_conf_t *my_conf = r->connection->handoff_in_ctx->ngx_conf;
-    //redisReply *reply = redisCommand(my_conf->redis_ctx, "GET %d", my_conf->my_id);
-    //assert(reply != NULL);
-    //printf("my load: %d\n", atoi(reply->str));
-    //freeReplyObject(reply);
-    printf("my load: %d\n", my_conf->shmaddr[0]);
+    uint8_t my_load = my_conf->shmaddr[0];
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "my load: %d", my_load);
 
-    if (handoff_in_ctx->req_counter > 18) {
+    if (handoff_in_ctx->req_counter > my_conf->handoff_freq) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
         return ngx_http_handoff_out_handler(r);
     }

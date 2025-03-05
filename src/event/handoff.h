@@ -1,7 +1,11 @@
 #ifndef __HANDOFF_H__
 #define __HANDOFF_H__
 
+//#include <ngx_core.h>
+//#include <ngx_config.h>
 #include <ngx_connection.h>
+//#include <ngx_http.h>
+//extern struct ngx_http_request_t;
 
 #include "queue.h"
 #include "forward.h"
@@ -51,7 +55,9 @@ typedef struct {
     int num_peers;
     int my_id;
     redisContext *redis_ctx;
-    int *shmaddr;
+    uint8_t *shmaddr;
+
+    int handoff_freq;
 } ngx_http_handoff_main_conf_t;
 
 
@@ -114,6 +120,8 @@ struct handoff_out {
         uint32_t recv_protobuf_len;
         uint32_t recv_protobuf_received;
 	ngx_http_handoff_main_conf_t *ngx_conf;
+ //       ngx_http_request_t *req_to_free;
+        void *req_to_free;
 };
 
 void handoff_out_serialize_reset(struct http_client *client, ngx_log_t *log);
@@ -136,6 +144,6 @@ void handoff_out_serialize(struct http_client *client, ngx_log_t *log);
 //void handoff_in_disconnect(struct handoff_in *in_ctx);
 #include "socket_serialize.pb-c.h"
 void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info, ngx_log_t *log);
-void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate);
+void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate, int from_migrate);
 
 #endif

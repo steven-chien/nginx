@@ -19,6 +19,7 @@
 #include "handoff_in.h"
 #include "handoff_out.h"
 
+static char *ngx_http_handoff_set_frequency(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_handoff_set_target(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_handoff_set_ifname(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
@@ -56,6 +57,14 @@ static ngx_command_t ngx_http_handoff_commands[] = {
       0,
       0,
       NULL },
+
+    { ngx_string("handoff_freq"),
+      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+      ngx_http_handoff_set_frequency,
+      0,
+      0,
+      NULL },
+
 
       ngx_null_command
 };
@@ -102,8 +111,9 @@ static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     clcf->handler = ngx_http_handoff_in_handler;
 
     // payload buffer
-    eight_MB = malloc(sizeof(uint8_t) * 1024 * 1024 * 8);
+    eight_MB = ngx_pcalloc(cf->pool, sizeof(uint8_t) * 1024 * 1024 * 8);
     memset(eight_MB, 1, sizeof(uint8_t) * 1024 * 1024 * 8);
+printf("doing malloc for eight_MB\n");
 
     // get my ID
     for (int i = 0; i < my_conf->num_peers; i++) {
@@ -123,10 +133,9 @@ static char *ngx_http_handoff_in(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
              exit(1);
         }
     }
-
-    if (my_conf->my_id != -1) {
+    else {
         int shmid;
-        if ((shmid = shmget(1234, sizeof(int), 0666)) == -1) {
+        if ((shmid = shmget(1234, sizeof(uint8_t), 0666)) == -1) {
             perror("shmget failed");
             exit(1);
         }
@@ -180,6 +189,20 @@ static char *ngx_http_handoff_set_ifname(ngx_conf_t *cf, ngx_command_t *cmd, voi
     return NGX_CONF_OK;
 }
 
+static char *ngx_http_handoff_set_frequency(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    ngx_http_handoff_main_conf_t *my_conf = ngx_http_conf_get_module_main_conf(cf, ngx_http_handoff_module);
+
+    ngx_str_t *value = cf->args->elts;
+    if (cf->args->nelts != 2) {
+        return NGX_CONF_ERROR;
+    }
+
+    my_conf->handoff_freq = ngx_atoi(value[1].data, value[1].len);
+    printf("Handoff frequency: %d\n", my_conf->handoff_freq);
+
+    return NGX_CONF_OK;
+}
+
 static char *ngx_http_handoff_set_target(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     ngx_http_handoff_main_conf_t *my_conf = ngx_http_conf_get_module_main_conf(cf, ngx_http_handoff_module);
 
@@ -208,11 +231,13 @@ static void *ngx_http_handoff_create_main_conf(ngx_conf_t *cf)
     ngx_http_handoff_main_conf_t  *my_conf;
 
     my_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_handoff_main_conf_t));
+    //my_conf = calloc(1, sizeof(ngx_http_handoff_main_conf_t));
     if (my_conf == NULL) {
         return NULL;
     }
     my_conf->num_peers = 0;
     my_conf->my_id = -1;
+    my_conf->handoff_freq = 0;
 
     return my_conf;
 }
