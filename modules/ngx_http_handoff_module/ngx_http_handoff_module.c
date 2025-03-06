@@ -124,19 +124,18 @@ printf("doing malloc for eight_MB\n");
              exit(1);
         }
     }
+    else {
+        int shmid;
+        if ((shmid = shmget(1234, sizeof(uint8_t), 0666)) == -1) {
+            perror("shmget failed");
+            exit(1);
+        }
 
-    //if (my_conf->my_id != -1) {
-    //    int shmid;
-    //    if ((shmid = shmget(1234, sizeof(uint8_t), 0666)) == -1) {
-    //        perror("shmget failed");
-    //        exit(1);
-    //    }
-
-    //    if ((my_conf->shmaddr = shmat(shmid, NULL, 0)) == (void *) -1) {
-    //        perror("shmat failed");
-    //        exit(1);
-    //    }
-    //}
+        if ((my_conf->shmaddr = shmat(shmid, NULL, 0)) == (void *) -1) {
+            perror("shmat failed");
+            exit(1);
+        }
+    }
 
     return NGX_CONF_OK;
 }
