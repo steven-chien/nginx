@@ -6,6 +6,7 @@
 #include "handoff.h"
 #include "ngx_http_handoff_module.h"
 #include "connect.h"
+#include "util.h"
 
 ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
                               struct handoff_out *handoff_out_ctx,
@@ -151,4 +152,46 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
 //    ngx_http_finalize_request(original_r, NGX_ERROR);
 
     return NGX_OK;
+}
+
+void init_reset_request(ngx_connection_t *c)
+{
+    ngx_connection_t *upstream_conn;
+    int rc = -1;
+
+    ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
+                  "client %V needs to be handed back off to front end", &c->addr_text);
+
+    struct handoff_out *handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
+    handoff_out_ctx->ngx_conf = c->handoff_in_ctx->ngx_conf;
+    struct http_client *client = create_http_client(0, c->fd);
+    size_t pool_size = c->listening->pool_size;
+    ngx_log_t *listener_log = &c->listening->log;
+
+    struct sockaddr_in* addr = (struct sockaddr_in*)c->sockaddr;
+    rc = get_mac_address(c->handoff_in_ctx->ngx_conf->ifname, *addr, client->client_mac);
+    assert(rc == 0);
+ 
+    client->client_addr = addr->sin_addr.s_addr;
+    client->client_port = addr->sin_port;
+    printf("client needs to be handed back off to front end (%d)\n", ntohs(addr->sin_port));
+    //strncpy(client->uri_str, (char*)r->uri.data, r->uri.len);
+    //client->uri_str[r->uri.len] = '\0';
+    //client->uri_str_len = r->uri.len;
+    
+    // migrated connection - handoff back
+    client->from_migrate = c->handoff_in_ctx->ngx_conf->my_id;
+    client->to_migrate = -1;
+    client->fd = c->fd;
+    
+    handoff_out_ctx->client = client;
+    handoff_out_serialize_reset(handoff_out_ctx->client, c->log);
+    rc = connect_to_upstream(&c->handoff_in_ctx->frontend_sockaddr, handoff_out_ctx, pool_size, handoff_out_connect_handler, listener_log, &upstream_conn);
+    if (rc != NGX_OK && rc != NGX_AGAIN) {
+        ngx_log_error(NGX_LOG_ALERT, c->log, ngx_errno, " connect to upstream fail");
+        return;
+    }
+    
+    // handoff_out_ctx is mem copied into upstream_conn, can free
+    free(handoff_out_ctx);
 }

@@ -11,6 +11,13 @@
 
 #include "util.h"
 
+int find_backend_id_by_address(uint32_t ip_addr, struct sockaddr_in *peer_addrs, int num_peers) {
+    for (int i = 0; i < num_peers; i++) {
+        if (ip_addr == peer_addrs[i].sin_addr.s_addr) return i;
+    }
+    return -1;
+}
+
 int my_random(int min, int max){
    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }

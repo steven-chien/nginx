@@ -17,4 +17,6 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
                               ngx_log_t *log,
                               ngx_connection_t **conn);
 
+void init_reset_request(ngx_connection_t *c);
+
 #endif

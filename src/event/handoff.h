@@ -142,6 +142,6 @@ void handoff_out_serialize(struct http_client *client, ngx_log_t *log);
 //void handoff_in_disconnect(struct handoff_in *in_ctx);
 #include "socket_serialize.pb-c.h"
 void handoff_in_deserialize(struct handoff_in *in_ctx, SocketSerialize *migration_info, ngx_log_t *log);
-void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate);
+void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_again, SocketSerialize *migration_info, struct sockaddr_in *my_sockaddr, int to_migrate, int from_migrate);
 
 #endif

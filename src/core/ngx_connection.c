@@ -1233,27 +1233,6 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 
     wev->write = 1;
 
-    //if (c->handoff_out_ctx) { 
-    //    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_out_ctx");
-    //    if (c->handoff_out_ctx->client) {
-    //        free(c->handoff_out_ctx->client);
-    //    }
-    //    ngx_pfree(c->pool, c->handoff_out_ctx);
-    //    c->handoff_out_ctx = NULL;
-    //}
-    //if (c->handoff_in_ctx) {
-    //    if (c->handoff_in_ctx->client_for_originaldone) {
-    //        free(c->handoff_in_ctx->client_for_originaldone);
-    //    }
-    //    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, ngx_socket_errno, "Freeing handoff_in_ctx");
-    //    ngx_pfree(c->pool, c->handoff_in_ctx);
-    //    c->handoff_in_ctx = NULL;
-    //}
-
-
-//    c->handoff_out_ctx = NULL;
-//    c->handoff_in_ctx = NULL;
-
     return c;
 }
 
