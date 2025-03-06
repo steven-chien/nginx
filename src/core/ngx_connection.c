@@ -1316,11 +1316,11 @@ ngx_close_connection(ngx_connection_t *c)
             free_http_client(c->handoff_in_ctx->client_for_originaldone);
             c->handoff_in_ctx->client_for_originaldone = NULL;
         }
-        //if (c->handoff_in_ctx->send_protobuf) {
-        //    free(c->handoff_in_ctx->send_protobuf);
-        //    c->handoff_in_ctx->send_protobuf = NULL;
-        //    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_in_ctx->send_protobuf in ngx_close_connection\n");
-        //}
+        if (c->handoff_in_ctx->send_protobuf) {
+            free(c->handoff_in_ctx->send_protobuf);
+            c->handoff_in_ctx->send_protobuf = NULL;
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_in_ctx->send_protobuf in ngx_close_connection\n");
+        }
         if (c->handoff_in_ctx->recv_protobuf) {
             ngx_pfree(c->pool, c->handoff_in_ctx->recv_protobuf);
             ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "Freeing handoff_in_ctx->recv_protobuf in ngx_close_connection\n");

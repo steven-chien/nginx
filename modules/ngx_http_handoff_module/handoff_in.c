@@ -204,6 +204,10 @@ ngx_log_debug4(NGX_LOG_DEBUG_EVENT, c->log, 0, "remove redir (%lu:%u , %u:%u)\n"
     // subsequent requests will use the handoff_in_ctx in the upstream_conn, set to false
     if (migration_info->msg_type == HANDOFF_REQUEST) {
         memcpy(restored_conn->handoff_in_ctx, handoff_in_ctx, sizeof(struct handoff_in));
+        if (handoff_in_ctx->send_protobuf) {
+            restored_conn->handoff_in_ctx->send_protobuf = malloc(handoff_in_ctx->send_protobuf_len);
+            memcpy(restored_conn->handoff_in_ctx->send_protobuf, handoff_in_ctx->send_protobuf, handoff_in_ctx->send_protobuf_len);
+        }
 ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "restored conn %s\n", inet_ntoa(restored_conn->handoff_in_ctx->frontend_sockaddr.sin_addr));
         restored_conn->handoff_in_ctx->client_for_originaldone = NULL;
         //restored_conn->handoff_in_ctx->client_for_originaldone = calloc(1, sizeof(struct http_client));
@@ -460,7 +464,7 @@ printf("receive incoming handoff\n");
         assert(rc == NGX_OK);
 
         if (handoff_in_ctx->client_to_handoff_again) {
-printf("connecting to upstream to handoff again\n");
+            ngx_log_debug0(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "connecting to upstream to handoff again\n");
             // rehandoff case, do it after control with fake server has closed. corner case: rehandoff to same server
             ngx_connection_t *upstream_conn;
             //struct handoff_out *handoff_out_ctx = ngx_palloc(r->connection->pool, sizeof(struct handoff_out));
@@ -491,7 +495,7 @@ printf("connecting to upstream to handoff again\n");
     //freeReplyObject(reply);
     //printf("my load: %d\n", my_conf->shmaddr[0]);
 
-    if (handoff_in_ctx->req_counter > 99) {
+    if (handoff_in_ctx->req_counter > 1) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
         return ngx_http_handoff_out_handler(r);
     }

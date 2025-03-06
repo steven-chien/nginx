@@ -201,14 +201,14 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
         //if (handoff_in_ctx == NULL || handoff_in_ctx->client_for_originaldone == NULL) {
         if (handoff_in_ctx == NULL) {
             // fresh connection - init handoff
-printf("to handoff...\n");
+ngx_log_debug(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "to handoff...\n");
             client->from_migrate = -1;
             client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
             client->fd = r->connection->fd;
             sockaddr_to_connect = &handoff_out_ctx->ngx_conf->peer_sockaddr[client->to_migrate];
         }
         else {
-printf("to handoff back...\n");
+ngx_log_debug(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "to handoff back...\n");
             // migrated connection - handoff back
             client->from_migrate = 1;
             client->to_migrate = -1;
