@@ -41,8 +41,8 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
     upstream_conn->pool = ngx_create_pool(pool_size, log);
     assert(upstream_conn->pool != NULL);
 
-    //upstream_conn->log = ngx_pcalloc(upstream_conn->pool, sizeof(ngx_log_t));
-    upstream_conn->log = calloc(1, sizeof(ngx_log_t));
+    upstream_conn->log = ngx_pcalloc(upstream_conn->pool, sizeof(ngx_log_t));
+    //upstream_conn->log = calloc(1, sizeof(ngx_log_t));
     *(upstream_conn->log) = *log;
     upstream_conn->pool->log = upstream_conn->log;
 
@@ -50,7 +50,9 @@ ngx_int_t connect_to_upstream(struct sockaddr_in *sockaddr,
     //upstream_conn->handoff_out_ctx = ngx_pcalloc(upstream_conn->pool, sizeof(struct handoff_out));
     upstream_conn->handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
     memcpy(upstream_conn->handoff_out_ctx, handoff_out_ctx, sizeof(struct handoff_out));
-    memcpy(upstream_conn->handoff_out_ctx->client, handoff_out_ctx->client, sizeof(struct http_client));
+    // handoff_out_ctx->client is already populated and linked via pointer. DO NOT FREE outside
+    //upstream_conn->handoff_out_ctx->client = calloc(1, sizeof(struct http_client));
+    //memcpy(upstream_conn->handoff_out_ctx->client, handoff_out_ctx->client, sizeof(struct http_client));
 
     value = 1;
     rc = setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (const void *) &value, sizeof(int));

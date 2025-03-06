@@ -25,6 +25,7 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
             ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0, "upstream sock read event fd=%d error %s, exiting", c->fd, strerror(ngx_errno));
             rc = ngx_del_event(ev, NGX_READ_EVENT, NGX_CLEAR_EVENT); 
             free(c->recv_buffer);
+            c->recv_buffer = NULL;
             ngx_close_connection(c);
             return;
         }
@@ -36,6 +37,7 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
             // backend acknowledged, close this connection
             rc = ngx_del_event(ev, NGX_READ_EVENT, NGX_CLEAR_EVENT); 
             free(c->recv_buffer);
+            c->recv_buffer = NULL;
             ngx_http_close_connection(c);
             return;
         }
@@ -127,6 +129,7 @@ static void handoff_out_write_handler(ngx_event_t *ev) {
 
     if (c->sent >= c->send_buffer_len) {
         free(c->send_buffer);
+        c->send_buffer = NULL;
         c->sent = 0;
         c->send_buffer_len = 0;
         rc = ngx_del_event(ev, NGX_WRITE_EVENT, NGX_CLEAR_EVENT); 
