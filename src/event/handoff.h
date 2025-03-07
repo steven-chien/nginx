@@ -56,6 +56,8 @@ typedef struct {
     int my_id;
     redisContext *redis_ctx;
     uint8_t *shmaddr;
+
+    int handoff_freq;
 } ngx_http_handoff_main_conf_t;
 
 

@@ -210,7 +210,7 @@ void handoff_out_serialize_reset(struct http_client *client, ngx_log_t *log)
 				client->client_port, self_sin.sin_port, true);
 	assert(ret == 0);
 	//zlog_debug(zlog_handoff, "Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
-	printf("handoff_out_serialize_reset(): Applied blocking with eBPF (%d,%d) (fd=%d)\n", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
+	//printf("handoff_out_serialize_reset(): Applied blocking with eBPF (%d,%d) (fd=%d)\n", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
 
 	// build reset proto_buf
 	SocketSerialize migration_info_reset = SOCKET_SERIALIZE__INIT;
@@ -253,7 +253,7 @@ void handoff_out_serialize_rehandoff(struct http_client **client_to_handoff_agai
 			migration_info->peer_addr, (uint8_t *)&migration_info->peer_mac, my_sockaddr->sin_addr.s_addr, my_mac,
 			migration_info->peer_port, migration_info->self_port, true);
 	assert(ret == 0);
-	printf("Rehandoff: Applied blocking with eBPF (%d,%d) (fd=%d)\n", ntohs(migration_info->peer_port), ntohs(migration_info->self_port) - 1 - 1, 0);
+	//printf("Rehandoff: Applied blocking with eBPF (%d,%d) (fd=%d)\n", ntohs(migration_info->peer_port), ntohs(migration_info->self_port) - 1 - 1, 0);
 
 	// we set fd as 0 so it will not considered as reset handoff
 	struct http_client *client = create_http_client(-1, 0);
@@ -301,7 +301,7 @@ void handoff_out_serialize(struct http_client *client, ngx_log_t *log)
 				client->client_addr, client->client_mac, self_sin.sin_addr.s_addr, my_mac,
 				client->client_port, self_sin.sin_port, true);
 	assert(ret == 0);
-	printf("handoff_out_serialize(): Applied blocking with eBPF (%d,%d) (fd=%d)\n", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
+	//printf("handoff_out_serialize(): Applied blocking with eBPF (%d,%d) (fd=%d)\n", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
 	ngx_log_debug3(NGX_LOG_DEBUG_EVENT, log, 0, "handoff_out_serialize(): Applied blocking with eBPF (%d,%d) (fd=%d)", ntohs(client->client_port), ntohs(self_sin.sin_port), client->fd);
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, log, 0, "ngx_event_connect_serialized before");
 

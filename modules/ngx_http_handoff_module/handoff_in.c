@@ -63,21 +63,22 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     handoff_in_ctx->osd_arr_index = find_backend_id_by_address(((struct sockaddr_in*)c->sockaddr)->sin_addr.s_addr, my_conf->peer_sockaddr, my_conf->num_peers);
 
     if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
-        int to_migrate = my_random(1, my_conf->num_peers) - 1;
+        //int to_migrate = my_random(1, my_conf->num_peers) - 1;
+        int to_migrate = (handoff_in_ctx->osd_arr_index + 1 + my_conf->num_peers) % my_conf->num_peers;
         handoff_out_serialize_rehandoff(&handoff_in_ctx->client_to_handoff_again, migration_info, &my_conf->my_sockaddr, to_migrate, my_conf->my_id);
-printf("HANDOFF_BACK_REQUEST: from %d: rehandoff to %d\n", handoff_in_ctx->osd_arr_index, to_migrate);
+//printf("HANDOFF_BACK_REQUEST: from %d: rehandoff to %d\n", handoff_in_ctx->osd_arr_index, to_migrate);
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "HANDOFF_BACK_RQUEST: rehandoff to %d\n", to_migrate);
         goto reply_handoff;
     }
     else if (migration_info->msg_type == HANDOFF_REQUEST) {
         handoff_in_deserialize(handoff_in_ctx, migration_info, c->log);
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "HANDOFF_REQUEST\n");
-printf("HANDOFF_REQUEST: from %d\n", handoff_in_ctx->osd_arr_index);
+//printf("HANDOFF_REQUEST: from %d\n", handoff_in_ctx->osd_arr_index);
     }
     else if (migration_info->msg_type == HANDOFF_RESET_REQUEST) {
         handoff_in_ctx->osd_arr_index = find_backend_id_by_address(((struct sockaddr_in*)c->sockaddr)->sin_addr.s_addr, my_conf->peer_sockaddr, my_conf->num_peers);
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "HANDOFF_RESET\n");
-printf("HANDOFF_RESET_REQUEST: from %d\n", handoff_in_ctx->osd_arr_index);
+//printf("HANDOFF_RESET_REQUEST: from %d\n", handoff_in_ctx->osd_arr_index);
         goto reply_handoff;
     }
     else {
@@ -164,7 +165,7 @@ reply_handoff:
                                     htons(ntohs(migration_info->self_port) - 1 - 1), migration_info->peer_port, false); // offst self port
         assert(rc == 0);
 ngx_log_debug4(NGX_LOG_DEBUG_EVENT, c->log, 0, "apply src ip modification (%u:%u , %lu:%u)\n", my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
-printf("apply src ip modification (%u:%u , %lu:%u)\n", my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
+//printf("apply src ip modification (%u:%u , %lu:%u)\n", my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
     }
     //else if (migration_info->msg_type == HANDOFF_BACK_REQUEST || migration_info->msg_type == HANDOFF_RESET_REQUEST) {
     else if (migration_info->msg_type == HANDOFF_RESET_REQUEST) {
@@ -176,7 +177,7 @@ printf("apply src ip modification (%u:%u , %lu:%u)\n", my_conf->my_sockaddr.sin_
                                      migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1));
         assert(rc == 0);
 ngx_log_debug4(NGX_LOG_DEBUG_EVENT, c->log, 0, "remove redir (%lu:%u , %u:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port) - 1 -1);
-printf("remove redir (%lu:%u , %u:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port) - 1 -1);
+//printf("remove redir (%lu:%u , %u:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), my_conf->my_sockaddr.sin_addr.s_addr, ntohs(migration_info->self_port) - 1 -1);
     }
 
     // build response proto_buf
@@ -357,9 +358,9 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
         //handoff_in_ctx = ngx_pcalloc(r->connection->pool, sizeof(struct handoff_in));
         handoff_in_ctx = calloc(1, sizeof(struct handoff_in));
         handoff_in_ctx->ngx_conf = ngx_http_get_module_main_conf(r, ngx_http_handoff_module);
-        handoff_in_ctx->req_counter = 0;
+        handoff_in_ctx->req_counter = 1;
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "receve incoming handoff");
-printf("receive incoming handoff\n");
+//printf("receive incoming handoff\n");
 
         r->request_body_in_single_buf = 1;
         r->keepalive = 1;
@@ -497,7 +498,7 @@ printf("receive incoming handoff\n");
     uint8_t my_load = my_conf->shmaddr[0];
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "my load: %d", my_load);
 
-    if (handoff_in_ctx->req_counter > 2) {
+    if (handoff_in_ctx->req_counter > my_conf->handoff_freq) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
         return ngx_http_handoff_out_handler(r);
     }

@@ -75,7 +75,7 @@ static void handoff_out_read_handler(ngx_event_t *ev) {
             memcpy(fake_server_mac, &(migration_info->peer_mac), sizeof(uint8_t) * 6);
      
 ngx_log_debug4(NGX_LOG_DEBUG_EVENT, ev->log, 0, "apply ip redir (%lu:%u , %lu:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), migration_info->self_addr, ntohs(migration_info->self_port) - 1 - 1);
-printf("apply ip redir (%lu:%u , %lu:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), migration_info->self_addr, ntohs(migration_info->self_port) - 1 - 1);
+//printf("apply ip redir (%lu:%u , %lu:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), migration_info->self_addr, ntohs(migration_info->self_port) - 1 - 1);
             rc = apply_redirection_ebpf(migration_info->peer_addr, migration_info->self_addr,
                                         migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1),
                                         migration_info->peer_addr, my_conf->my_mac, my_conf->peer_sockaddr[handoff_out_ctx->client->to_migrate].sin_addr.s_addr, fake_server_mac,
@@ -85,12 +85,12 @@ printf("apply ip redir (%lu:%u , %lu:%u)\n", migration_info->peer_addr, ntohs(mi
         else {
             // handoff back, remove src IP modification
 ngx_log_debug4(NGX_LOG_DEBUG_EVENT, ev->log, 0, "remove src ip redir (%lu:%u , %lu:%u)\n", migration_info->self_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
-printf("remove src ip redir (%lu:%u , %lu:%u)\n", migration_info->self_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
+//printf("remove src ip redir (%lu:%u , %lu:%u)\n", migration_info->self_addr, ntohs(migration_info->self_port), migration_info->peer_addr, ntohs(migration_info->peer_port));
             rc = remove_redirection_ebpf(migration_info->self_addr, migration_info->peer_addr,
                                          migration_info->self_port, migration_info->peer_port);
             assert(rc == 0);
 ngx_log_debug4(NGX_LOG_DEBUG_EVENT, ev->log, 0, "remove blocking ip (%lu:%u , %lu:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), migration_info->self_addr, ntohs(migration_info->self_port));
-printf("remove blocking ip (%lu:%u , %lu:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), migration_info->self_addr, ntohs(migration_info->self_port));
+//printf("remove blocking ip (%lu:%u , %lu:%u)\n", migration_info->peer_addr, ntohs(migration_info->peer_port), migration_info->self_addr, ntohs(migration_info->self_port));
             // remove blocking rule installed duirng serialization
             rc = remove_redirection_ebpf(migration_info->peer_addr, migration_info->self_addr,
                                          migration_info->peer_port, migration_info->self_port);
@@ -213,7 +213,7 @@ ngx_log_debug(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "to handoff...\n");
         else {
 ngx_log_debug(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "to handoff back...\n");
             // migrated connection - handoff back
-            client->from_migrate = 1;
+            client->from_migrate = handoff_in_ctx->ngx_conf->my_id;
             client->to_migrate = -1;
             client->fd = handoff_in_ctx->restored_conn->fd;
             sockaddr_to_connect = &handoff_in_ctx->frontend_sockaddr;

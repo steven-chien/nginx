@@ -174,7 +174,7 @@ void init_reset_request(ngx_connection_t *c)
  
     client->client_addr = addr->sin_addr.s_addr;
     client->client_port = addr->sin_port;
-    printf("client needs to be handed back off to front end (%d)\n", ntohs(addr->sin_port));
+    //printf("client needs to be handed back off to front end (%d)\n", ntohs(addr->sin_port));
     //strncpy(client->uri_str, (char*)r->uri.data, r->uri.len);
     //client->uri_str[r->uri.len] = '\0';
     //client->uri_str_len = r->uri.len;
