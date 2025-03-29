@@ -61,13 +61,13 @@ Finally, we define the backend servers using the `handoff_in` directive. `79` is
 
 ## Running
 ### NIC Configuration
-Refer to https://github.com/uoenoplab/xo/server for NIC configurations and to setup the eBPF program.
+Refer to https://github.com/uoenoplab/xo-server for NIC configurations and to set up the eBPF program.
 ### CPU load monitoring
-On every backend, run `cpu_monitor.out [ID]` in the backend (i.e. using `nohup`), where `ID` is determined by the order of specification in `xo.conf` for `handoff_target`.
-On the front end, run `monitor_backends.out` in the background (i.e. using `nohup`).
+On every backend, run `cpu_monitor.out [ID]` in the backend (i.e., using `nohup`), where `ID` is determined by the order of specification in `xo.conf` for `handoff_target`.
+On the front end, run `monitor_backends.out` in the background (i.e., using `nohup`).
 ### Running NGINX
-Run NGNIX as usual.
+Run NGINX as usual.
 ```bash
 # ./objs/nginx -c `pwd`/conf/xo.conf
 ```
-The frontend will accept HTTP connection at port `80`.
+The frontend will accept an HTTP connection at port `80`.
