@@ -58,6 +58,8 @@ typedef struct {
     uint8_t *shmaddr;
 
     int handoff_freq;
+    int handoff_back_counter;
+    long int last_trigger;
 } ngx_http_handoff_main_conf_t;
 
 

@@ -124,27 +124,16 @@ printf("doing malloc for eight_MB\n");
     }
     printf("my id is %d\n", my_conf->my_id);
 
-    // if i am frontend
-    if (my_conf->my_id == -1) {
-        // get redis handle for CPU usage
-        my_conf->redis_ctx = redisConnect("n30", 6379);
-        if (my_conf->redis_ctx->err) {
-             fprintf(stderr, "error: %s\n", my_conf->redis_ctx->errstr);
-             exit(1);
-        }
-    }
-    else {
-        int shmid;
-        if ((shmid = shmget(1234, sizeof(uint8_t), 0666)) == -1) {
-            perror("shmget failed");
-            exit(1);
-        }
+    //int shmid;
+    //if ((shmid = shmget(1234, sizeof(uint8_t), 0666)) == -1) {
+    //    perror("shmget failed");
+    //    exit(1);
+    //}
 
-        if ((my_conf->shmaddr = shmat(shmid, NULL, 0)) == (void *) -1) {
-            perror("shmat failed");
-            exit(1);
-        }
-    }
+    //if ((my_conf->shmaddr = shmat(shmid, NULL, 0)) == (void *) -1) {
+    //    perror("shmat failed");
+    //    exit(1);
+    //}
 
     return NGX_CONF_OK;
 }
@@ -238,6 +227,9 @@ static void *ngx_http_handoff_create_main_conf(ngx_conf_t *cf)
     my_conf->num_peers = 0;
     my_conf->my_id = -1;
     my_conf->handoff_freq = 0;
+
+    my_conf->handoff_back_counter = 0;
+    my_conf->last_trigger = 0; //ngx_time();
 
     return my_conf;
 }

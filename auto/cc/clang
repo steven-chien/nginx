@@ -82,6 +82,7 @@ CFLAGS="$CFLAGS -Wconditional-uninitialized"
 
 # we have a lot of unused function arguments
 CFLAGS="$CFLAGS -Wno-unused-parameter -Wno-unused-function -Wno-uninitialized -fno-omit-frame-pointer -fsanitize=address,undefined,leak -Wno-conditional-uninitialized" #-fsanitize-recover=all"
+#CFLAGS="$CFLAGS -Wno-unused-parameter -Wno-unused-function -Wno-uninitialized -Wno-conditional-uninitialized" #-fsanitize-recover=all"
 
 # deprecated system OpenSSL library on OS X
 if [ "$NGX_SYSTEM" = "Darwin" ]; then

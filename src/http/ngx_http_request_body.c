@@ -9,6 +9,7 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#include "connect.h"
 
 static void ngx_http_read_client_request_body_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_do_read_client_request_body(ngx_http_request_t *r);
@@ -386,6 +387,10 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
             if (n == 0) {
                 ngx_log_error(NGX_LOG_INFO, c->log, 0,
                               "client prematurely closed connection");
+
+                if (c->handoff_in_ctx && c->handoff_in_ctx->client_for_originaldone == NULL) {
+                    init_reset_request(c);
+                }
             }
 
             if (n == 0 || n == NGX_ERROR) {

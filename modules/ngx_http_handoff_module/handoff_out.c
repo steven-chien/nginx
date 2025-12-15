@@ -81,6 +81,9 @@ ngx_log_debug4(NGX_LOG_DEBUG_EVENT, ev->log, 0, "apply ip redir (%lu:%u , %lu:%u
                                         migration_info->peer_addr, my_conf->my_mac, my_conf->peer_sockaddr[handoff_out_ctx->client->to_migrate].sin_addr.s_addr, fake_server_mac,
                                         migration_info->peer_port, migration_info->self_port, false);
             assert(rc == 0);
+            //rc = remove_redirection_ebpf(migration_info->peer_addr, migration_info->self_addr,
+            //                             migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1));
+            //assert(rc == 0);
         }
         else {
             // handoff back, remove src IP modification
@@ -204,9 +207,21 @@ ngx_int_t ngx_http_handoff_out_handler(ngx_http_request_t *r) {
         //if (handoff_in_ctx == NULL || handoff_in_ctx->client_for_originaldone == NULL) {
         if (handoff_in_ctx == NULL) {
             // fresh connection - init handoff
+            char *tmp0 = strstr((char*)r->uri.data + sizeof(char), "/");
+
+            client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
+            // overwrite to_migrate if found in URI
+            if (tmp0) {
+                size_t len = tmp0 - ((char*)r->uri.data + sizeof(char));
+                if (len < r->uri.len) {
+                    char init_migrate_target_str[10];
+                    strncpy(init_migrate_target_str, (char*)r->uri.data + sizeof(char), len);
+                    client->to_migrate = atoi(init_migrate_target_str);
+                }
+            }
+
 ngx_log_debug(NGX_LOG_DEBUG_EVENT, r->connection->log, 0, "to handoff...\n");
             client->from_migrate = -1;
-            client->to_migrate = my_random(1, handoff_out_ctx->ngx_conf->num_peers) - 1;
             client->fd = r->connection->fd;
             sockaddr_to_connect = &handoff_out_ctx->ngx_conf->peer_sockaddr[client->to_migrate];
         }

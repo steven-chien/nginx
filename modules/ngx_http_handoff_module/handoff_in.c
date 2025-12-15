@@ -63,7 +63,7 @@ void ngx_http_handoff_in_init(ngx_http_request_t *r)
     handoff_in_ctx->osd_arr_index = find_backend_id_by_address(((struct sockaddr_in*)c->sockaddr)->sin_addr.s_addr, my_conf->peer_sockaddr, my_conf->num_peers);
 
     if (migration_info->msg_type == HANDOFF_BACK_REQUEST) {
-        //int to_migrate = my_random(1, my_conf->num_peers) - 1;
+        // round robin
         int to_migrate = (handoff_in_ctx->osd_arr_index + 1 + my_conf->num_peers) % my_conf->num_peers;
         handoff_out_serialize_rehandoff(&handoff_in_ctx->client_to_handoff_again, migration_info, &my_conf->my_sockaddr, to_migrate, my_conf->my_id);
 //printf("HANDOFF_BACK_REQUEST: from %d: rehandoff to %d\n", handoff_in_ctx->osd_arr_index, to_migrate);
@@ -173,6 +173,7 @@ ngx_log_debug4(NGX_LOG_DEBUG_EVENT, c->log, 0, "apply src ip modification (%u:%u
         memcpy(&handoff_in_ctx->frontend_sockaddr, &my_conf->my_sockaddr, sizeof(struct sockaddr_in));
         // remove redirection if this is handoff back
         // TODO FIX THIS
+        //rc = remove_redirection_ebpf(migration_info->peer_addr, my_conf->my_sockaddr.sin_addr.s_addr,
         rc = remove_redirection_ebpf(migration_info->peer_addr, my_conf->my_sockaddr.sin_addr.s_addr,
                                      migration_info->peer_port, htons(ntohs(migration_info->self_port) - 1 - 1));
         assert(rc == 0);
@@ -287,12 +288,19 @@ ngx_int_t xo_handle_http_request(ngx_http_request_t *r) {
 
     int payload_size = 0;
     if (r->uri.len > 1) {
+        char *tmp = strstr((char*)r->uri.data + sizeof(char), "/");
         payload_size = atoi((char*)r->uri.data + sizeof(char));
+        if (tmp) {
+            size_t len = tmp - ((char*)r->uri.data + sizeof(char));
+            if (len < r->uri.len) {
+                payload_size = atoi(tmp + sizeof(char));
+            }
+        }
     }
 
     r->keepalive = 1;
     r->headers_out.content_type.len = sizeof("application/octet-stream") - 1;
-    r->headers_out.content_type.data = (u_char *) "applicatoin/octet-stream";
+    r->headers_out.content_type.data = (u_char *) "application/octet-stream";
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.content_length_n = payload_size;
 
@@ -390,9 +398,17 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "sending first OK to client uri: %s", handoff_in_ctx->client_for_originaldone->uri_str);
 
             int payload_size = 0;
-            if (strlen(handoff_in_ctx->client_for_originaldone->uri_str) > 1)
+            if (strlen(handoff_in_ctx->client_for_originaldone->uri_str) > 1) {
+                char *tmp = strstr(handoff_in_ctx->client_for_originaldone->uri_str + sizeof(char), "/");
                 payload_size = atoi(handoff_in_ctx->client_for_originaldone->uri_str + sizeof(char));
-    
+                if (tmp) {
+                    payload_size = atoi(tmp + sizeof(char));
+                }
+                else {
+                    payload_size = atoi(handoff_in_ctx->client_for_originaldone->uri_str + sizeof(char));
+                }
+            }
+
             size_t total_header_len = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nServer: nginx/1.27.3\r\nDate: Fri, 31 Jan 2025 01:26:51 GMT\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", payload_size);
             restored_conn->send_buffer = calloc((total_header_len + 1 + payload_size + 1), sizeof(uint8_t));
             restored_conn->send_buffer_len = total_header_len + payload_size;
@@ -495,12 +511,40 @@ ngx_int_t ngx_http_handoff_in_handler(ngx_http_request_t *r) {
     }
 
     ngx_http_handoff_main_conf_t *my_conf = r->connection->handoff_in_ctx->ngx_conf;
-    uint8_t my_load = my_conf->shmaddr[0];
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "my load: %d", my_load);
+    long int current_time = ngx_time();
+//printf("timestamp %ld %ld %d\n", current_time, my_conf->last_trigger, my_conf->handoff_back_counter);
 
-    if (handoff_in_ctx->req_counter > my_conf->handoff_freq) {
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "Handled %d req, handoffback", r->connection->handoff_in_ctx->req_counter);
-        return ngx_http_handoff_out_handler(r);
+    if (my_conf->handoff_back_counter == 0) {
+        if (my_conf->last_trigger == 0) {
+            my_conf->last_trigger = current_time;
+        }
+        else if (my_conf->last_trigger != 0 && current_time - my_conf->last_trigger > 5) {
+            my_conf->handoff_back_counter = 1;
+printf("start to dynamic load balance: timestamp %ld %ld %d\n", current_time, my_conf->last_trigger, my_conf->handoff_back_counter);
+        }
+    }
+
+    if (my_conf->handoff_back_counter && current_time - my_conf->last_trigger >= 1) {
+        //uint8_t cpu_loads[my_conf->num_peers];
+        //memcpy(cpu_loads, my_conf->shmaddr, sizeof(uint8_t) * my_conf->num_peers);
+        //uint8_t my_load = cpu_loads[my_conf->my_id];
+        uint8_t my_load = my_conf->shmaddr[my_conf->my_id];
+
+        bool trigger_migration = false;
+        for (int i = 0; i < my_conf->num_peers; i++) {
+            // trigger migration is found someone with 10% lower load
+            if (i != my_conf->my_id && (100-my_conf->shmaddr[i])-(100-my_load) > 10) {
+printf("test migration %d(%u,%u)\n", i, my_load, my_conf->shmaddr[i]);
+                trigger_migration = true;
+                break;
+            }
+        }
+
+        if (trigger_migration) {
+            my_conf->last_trigger = ngx_time();
+//            printf("trigger migration: current counter: %d ; last trigger: %ld\n", my_conf->handoff_back_counter, current_time - my_conf->last_trigger);
+            return ngx_http_handoff_out_handler(r);
+        }
     }
 
     return xo_handle_http_request(r);

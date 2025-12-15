@@ -162,6 +162,7 @@ void init_reset_request(ngx_connection_t *c)
     ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
                   "client %V needs to be handed back off to front end", &c->addr_text);
 
+    printf("client needs to be handed back off to front end\n");
     struct handoff_out *handoff_out_ctx = calloc(1, sizeof(struct handoff_out));
     handoff_out_ctx->ngx_conf = c->handoff_in_ctx->ngx_conf;
     struct http_client *client = create_http_client(0, c->fd);

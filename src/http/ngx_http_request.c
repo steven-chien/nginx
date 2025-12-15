@@ -3431,6 +3431,7 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
     if (n == 0) {
         ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
                       "client %V closed keepalive connection", &c->addr_text);
+
         ngx_http_close_connection(c);
         return;
     }

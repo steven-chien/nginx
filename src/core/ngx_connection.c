@@ -1601,7 +1601,6 @@ ngx_tcp_nodelay(ngx_connection_t *c)
 
         ngx_connection_error(c, ngx_socket_errno,
                              "setsockopt(TCP_NODELAY) failed");
-                             printf("setsockopt(TCP_NODELAY) failed fd=%d\n", c->fd);
         return NGX_ERROR;
     }
 
